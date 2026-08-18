@@ -139,6 +139,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (firebaseUser) {
           const userQ = query(collection(db, 'users'), where('authUid', '==', firebaseUser.uid));
           
+          const isAdminEmail = firebaseUser.email?.trim().toLowerCase() === "pcristo35@gmail.com";
+          
           // Use onSnapshot for real-time profile updates
           unsubscribeProfile = onSnapshot(userQ, async (snap) => {
             try {
@@ -164,20 +166,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   setLoading(false);
                   return;
                 }
+                
+                if (isAdminEmail && userData.role !== 'admin') {
+                  userData.role = 'admin';
+                  try {
+                    await setDoc(doc(db, 'users', docSnap.id), { role: 'admin' }, { merge: true });
+                  } catch (e) {
+                    console.error('Error promoting admin user:', e);
+                  }
+                }
 
-                if (userData.status === 'inactive') {
+                if (userData.status === 'inactive' && !isAdminEmail) {
                   await signOut(auth);
                   setUser(null);
                   toast.error(t('common.account_suspended') || 'Account suspended');
                   localStorage.removeItem('intendedRole');
-                } else if (intendedRole === 'staff' && userData.role === 'customer') {
+                } else if (intendedRole === 'staff' && userData.role === 'customer' && !isAdminEmail) {
                   await signOut(auth);
                   setUser(null);
                   toast.error(language === 'pt' ? 'O acesso à área de Administração é restrito.' : 'Access to the Admin area is restricted.');
                   localStorage.removeItem('intendedRole');
                 } else {
-                  setUser({ id: docSnap.id, ...userData } as User);
-                  if (userData.role === 'customer') {
+                  setUser({ id: docSnap.id, ...userData, role: isAdminEmail ? 'admin' : userData.role } as User);
+                  if (userData.role === 'customer' && !isAdminEmail) {
                     syncExistingCustomerDetails(firebaseUser.uid, userData.email, userData.name || firebaseUser.displayName || 'Customer');
                   }
                   if (intendedRole) {
@@ -188,38 +199,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setLoading(false);
               } else {
                 // Not found in users. Check if they are a customer (who are no longer stored in users)
-                const custQ = query(collection(db, 'customers'), where('authUid', '==', firebaseUser.uid));
-                const custSnap = await getDocs(custQ);
-                
-                if (!custSnap.empty) {
-                  const custDoc = custSnap.docs[0];
-                  const custData = custDoc.data();
+                let custDocFound = false;
+                if (!isAdminEmail) {
+                  const custQ = query(collection(db, 'customers'), where('authUid', '==', firebaseUser.uid));
+                  const custSnap = await getDocs(custQ);
                   
-                  const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
-                  if (isEmailProvider && !firebaseUser.emailVerified) {
-                    await signOut(auth);
-                    setUser(null);
-                    toast.error(t('auth.verify_email_first'));
+                  if (!custSnap.empty) {
+                    custDocFound = true;
+                    const custDoc = custSnap.docs[0];
+                    const custData = custDoc.data();
+                    
+                    const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
+                    if (isEmailProvider && !firebaseUser.emailVerified) {
+                      await signOut(auth);
+                      setUser(null);
+                      toast.error(t('auth.verify_email_first'));
+                      setLoading(false);
+                      return;
+                    }
+                    
+                    if (custData.status === 'inactive') {
+                      await signOut(auth);
+                      setUser(null);
+                      toast.error(t('common.account_suspended') || 'Account suspended');
+                      return;
+                    }
+                    
+                    setUser({ 
+                      id: custDoc.id,
+                      email: custData.email,
+                      name: custData.name,
+                      role: 'customer',
+                      status: custData.status || 'active'
+                    });
                     setLoading(false);
                     return;
                   }
-                  
-                  if (custData.status === 'inactive') {
-                    await signOut(auth);
-                    setUser(null);
-                    toast.error(t('common.account_suspended') || 'Account suspended');
-                    return;
-                  }
-                  
-                  setUser({ 
-                    id: custDoc.id,
-                    email: custData.email,
-                    name: custData.name,
-                    role: 'customer',
-                    status: custData.status || 'active'
-                  });
-                  setLoading(false);
-                  return;
                 }
 
                 // If we are already in the process of creating, don't try again
@@ -243,7 +258,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // Only attempt creation if truly missing
                 const intendedRole = localStorage.getItem('intendedRole') as UserRole || 'customer';
-                const isAdminEmail = firebaseUser.email === "pcristo35@gmail.com";
                 const role: UserRole = isAdminEmail ? 'admin' : 'customer';
                 
                 // --- NEW LOGIC: ENFORCE REGISTRATION BEFORE LOGIN ---
@@ -476,9 +490,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || (user?.email?.trim().toLowerCase() === 'pcristo35@gmail.com');
   const isStaff = user?.role === 'staff' || isAdmin;
-  const isCustomer = user?.role === 'customer';
+  const isCustomer = user?.role === 'customer' && !isAdmin;
 
   return (
     <AuthContext.Provider value={{ 

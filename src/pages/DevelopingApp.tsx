@@ -124,7 +124,7 @@ export default function DevelopingApp({ onUnlock }: DevelopingAppProps) {
         {/* Texts */}
         <div className="space-y-2">
           <h1 className="text-2xl font-black text-white tracking-tight">
-            {language === 'pt' ? `Projeto ${restaurantName}` : `Project ${restaurantName}`}
+            {language === 'pt' ? 'Em Desenvolvimento' : 'Under Development'}
           </h1>
           <p className="text-sm text-gray-300 max-w-xs mx-auto leading-relaxed">
             {language === 'pt'
@@ -175,12 +175,7 @@ export default function DevelopingApp({ onUnlock }: DevelopingAppProps) {
       {/* Footer Section */}
       <div className="w-full max-w-md text-center text-[11px] text-gray-400 font-medium space-y-2 flex flex-col items-center">
         <div>
-          <div>
-            {language === 'pt' ? `Projeto ${restaurantName}` : `Project ${restaurantName}`}
-          </div>
-          <div>
-            © 2026 {APP_CONFIG.companyName}. {language === 'pt' ? 'Todos os direitos reservados.' : 'All rights reserved.'}
-          </div>
+          © 2026 {APP_CONFIG.companyName}. {language === 'pt' ? 'Todos os direitos reservados.' : 'All rights reserved.'}
         </div>
         {zarcoZLogo && (
           <img 

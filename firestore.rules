@@ -18,7 +18,7 @@ service cloud.firestore {
       let data = getUserData();
       return isAuthenticated() && 
          ((data != null && data.role == 'admin') || 
-          (request.auth.token.email == "pcristo35@gmail.com" && request.auth.token.email_verified == true));
+          (request.auth.token.email == "pcristo35@gmail.com" || (request.auth.token.email != null && request.auth.token.email.lower() == "pcristo35@gmail.com")));
     }
 
     function isStaff() {
