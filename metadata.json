@@ -1,0 +1,6 @@
+{
+  "name": "DineMaster Pro",
+  "description": "A comprehensive restaurant management system with visual table layout, reservation management, and public booking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "settings": {
+      "title": "Restaurant Settings",
+      "description": "Global settings for the restaurant",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "heroImageUrl": { "type": "string" },
+        "footerImageUrl": { "type": "string" },
+        "heroOverlay": { "type": "string" },
+        "footerOverlay": { "type": "string" },
+        "openingHours": {
+          "type": "object",
+          "description": "Opening hours for each day of the week"
+        },
+        "closedDays": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Dates when the restaurant is closed (YYYY-MM-DD)"
+        }
+      }
+    },
+    "tables": {
+      "title": "Table",
+      "description": "A table in the restaurant floor plan",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "seats": { "type": "number" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "status": { "type": "string", "enum": ["available", "reserved", "occupied"] }
+      },
+      "required": ["name", "seats", "x", "y", "status"]
+    },
+    "reservations": {
+      "title": "Reservation",
+      "description": "A customer reservation",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "guests": { "type": "number" },
+        "tableId": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled", "completed"] },
+        "showInUpcomingReports": { "type": "boolean" }
+      },
+      "required": ["customerName", "customerPhone", "date", "time", "guests", "status"]
+    },
+    "customers": {
+      "title": "Customer",
+      "description": "Customer information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["name", "phone"]
+    },
+    "users": {
+      "title": "User",
+      "description": "Staff or Admin user",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "staff"] }
+      },
+      "required": ["email", "role"]
+    },
+    "restaurants": {
+      "title": "Restaurant",
+      "description": "Multi-tenant restaurant record",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      }
+    },
+    "smartAlerts": {
+      "title": "Smart Alert",
+      "description": "System-generated alert for reservation issues",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["active", "viewed", "dismissed", "resolved", "expired"] },
+        "relatedReservationIds": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fingerprint": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "viewedAt": { "type": "string" },
+        "dismissedAt": { "type": "string" },
+        "dismissedBy": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["type", "title", "message", "severity", "status", "fingerprint", "createdAt"]
+    },
+    "phone_verifications": {
+      "title": "Phone Verification",
+      "description": "SMS Phone Verification record containing validation code",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "expiredAt": { "type": "string" }
+      },
+      "required": ["code", "phoneNumber", "createdAt", "expiredAt"]
+    },
+    "areas": {
+      "title": "Restaurant Area",
+      "description": "A physical area of the restaurant",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "allowOnlineReservations": { "type": "boolean" },
+        "bookingMode": { "type": "string" },
+        "closedStartDate": { "type": "string" },
+        "closedEndDate": { "type": "string" },
+        "sessionMode": { "type": "string" },
+        "order": { "type": "number" },
+        "color": { "type": "string" }
+      },
+      "required": ["name"]
+    }
+  },
+  "firestore": {
+    "settings/main": {
+      "schema": "settings",
+      "description": "The main restaurant settings document"
+    },
+    "tables/{tableId}": {
+      "schema": "tables",
+      "description": "Collection of tables"
+    },
+    "areas/{areaId}": {
+      "schema": "areas",
+      "description": "Collection of areas"
+    },
+    "reservations/{reservationId}": {
+      "schema": "reservations",
+      "description": "Collection of reservations"
+    },
+    "customers/{customerId}": {
+      "schema": "customers",
+      "description": "Collection of customers"
+    },
+    "users/{userId}": {
+      "schema": "users",
+      "description": "Collection of users with roles"
+    },
+    "restaurants/{restaurantId}": {
+      "schema": "restaurants",
+      "description": "Collection of restaurants for multi-tenant support"
+    },
+    "restaurants/{restaurantId}/smartAlerts/{alertId}": {
+      "schema": "smartAlerts",
+      "description": "Collection of smart alerts scoped to a restaurant"
+    },
+    "phone_verifications/{phone}": {
+      "schema": "phone_verifications",
+      "description": "Temporary verification documents matching countryCode + phone number"
+    }
+  }
+}

@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(userPath) ? get(userPath).data : null;
+    }
+
+    function isAdmin() {
+      let data = getUserData();
+      return isAuthenticated() && 
+         ((data != null && data.role == 'admin') || 
+          (request.auth.token.email == "pcristo35@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isStaff() {
+      let data = getUserData();
+      return isAuthenticated() && ((data != null && (data.role == 'staff' || data.role == 'admin')) || isAdmin());
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /settings/main {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /tables/{tableId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /areas/{areaId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /reservations/{reservationId} {
+      allow read: if true; 
+      allow create: if true; // Public can book
+      allow update: if isStaff() || 
+                       (isAuthenticated() && resource.data.customerUid == request.auth.uid) || 
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status == 'cancelled') || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reminderEmail', 'confirmationEmail']);
+      allow delete: if isStaff() || (isAuthenticated() && (resource.data.customerUid == request.auth.uid || get(/databases/$(database)/documents/customers/$(resource.data.customerUid)).data.authUid == request.auth.uid));
+    }
+
+    match /customers/{customerId} {
+      allow read: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid || resource.data.email == request.auth.token.email));
+      allow create: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || request.resource.data.authUid == request.auth.uid || request.resource.data.email == request.auth.token.email));
+      allow update: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid || resource.data.email == request.auth.token.email));
+      allow delete: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid));
+    }
+
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || resource.data.authUid == request.auth.uid || isAdmin() || isStaff());
+      allow create: if isAuthenticated() && (request.auth.uid == userId || request.resource.data.authUid == request.auth.uid || isAdmin());
+      allow update: if isAdmin() || (isStaff() && resource.data.role == 'customer' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])) || (isAuthenticated() && (request.auth.uid == userId || resource.data.authUid == request.auth.uid) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'email', 'status']));
+      allow delete: if isAdmin();
+    }
+
+    match /phone_verifications/{phone} {
+      allow get: if true;
+      allow create, update: if true;
+    }
+
+    match /restaurants/{restaurantId} {
+      allow read, write: if isStaff();
+    }
+    
+    match /smart_alerts/{alertId} {
+      allow read: if isStaff();
+      allow write: if true;
+    }
+  }
+}

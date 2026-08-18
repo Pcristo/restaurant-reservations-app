@@ -1,0 +1,354 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-family, "Inter"), ui-sans-serif, system-ui, sans-serif;
+  --color-amber-50: var(--primary-color-lightest, color-mix(in srgb, var(--primary-color) 5%, white));
+  --color-amber-100: var(--primary-color-light, color-mix(in srgb, var(--primary-color) 15%, white));
+  --color-amber-200: var(--primary-color-light2, color-mix(in srgb, var(--primary-color) 30%, white));
+  --color-amber-300: var(--primary-color-light3, color-mix(in srgb, var(--primary-color) 50%, white));
+  --color-amber-400: var(--primary-color-light4, color-mix(in srgb, var(--primary-color) 75%, white));
+  --color-amber-500: var(--primary-color, #f77408);
+  --color-amber-600: var(--primary-color-dark, color-mix(in srgb, var(--primary-color) 85%, black));
+  --color-amber-700: var(--primary-color-darker, color-mix(in srgb, var(--primary-color) 70%, black));
+  --color-amber-800: var(--primary-color-darkest, color-mix(in srgb, var(--primary-color) 55%, black));
+  --color-amber-900: var(--primary-color-deep, color-mix(in srgb, var(--primary-color) 40%, black));
+  
+  --radius-md: var(--button-radius, 0.375rem);
+  --radius-lg: var(--button-radius, 0.5rem);
+  --radius-xl: var(--box-radius, 0.75rem);
+  --radius-2xl: var(--box-radius, 1rem);
+  --radius-3xl: var(--box-radius, 1.5rem);
+}
+
+:root {
+  --font-family: "Inter";
+  --primary-color: #f77408;
+  --input-radius: 0.5rem;
+}
+
+input, select, textarea, .PhoneInput {
+  border-radius: var(--input-radius, 0.5rem) !important;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+.hero-overlay {
+  background-color: var(--hero-overlay, rgba(0, 0, 0, 0.5));
+}
+
+.footer-overlay {
+  background-color: var(--footer-overlay, rgba(0, 0, 0, 0.7));
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Custom styling for react-phone-number-input */
+.PhoneInput {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.PhoneInputInput {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font-size: 0.875rem;
+  color: inherit;
+}
+
+/* Fix light/dark theme compatibility for select dropdown arrow & options */
+.PhoneInputCountrySelectArrow {
+  color: currentColor;
+  opacity: 0.7;
+}
+
+.PhoneInputCountryIcon {
+  display: flex;
+  align-items: center;
+}
+
+
+/* ==========================================================================
+   PRINT MEDIA STYLES - Professional A4 Print Feature
+   ========================================================================== */
+
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  /* 1. Page Configuration: Standard A4 size with clean 10mm margins */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  /* 2. Color & Background Fidelity: Force browser to preserve exact colors and background graphics */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    font-size: 12px;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 3. Universal Container Resets: Ensure no scrolling clipping or flex shrinkage */
+  #root,
+  #root > div,
+  main,
+  .min-h-screen {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .max-w-7xl,
+  .max-w-6xl,
+  .max-w-5xl {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+
+  /* 4. Hide Non-Essential Elements: Navigation, sidebars, buttons, filters, toolbars, popups */
+  nav,
+  header:not(.print-header),
+  footer,
+  aside,
+  .no-print,
+  button:not(.print-include),
+  input:not(.print-include),
+  select:not(.print-include),
+  .custom-scrollbar::-webkit-scrollbar,
+  .toaster,
+  [role="status"],
+  [role="alert"],
+  .cookie-consent,
+  .back-to-top,
+  .fixed.bottom-4,
+  .fixed.bottom-6,
+  .fixed.top-4 {
+    display: none !important;
+  }
+
+  /* 5. Show Dedicated Print Components */
+  .print-only {
+    display: block !important;
+  }
+  
+  .print-only-flex {
+    display: flex !important;
+  }
+
+  .print-only-table {
+    display: table !important;
+  }
+
+  /* 6. Floor Plan Canvas Print Optimization: Scaled precisely to fit A4 width without cutoffs */
+  .floor-plan-scroll-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 432px !important;
+    max-height: 432px !important;
+    overflow: hidden !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+    margin-bottom: 16px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background-color: #ffffff !important;
+    position: relative !important;
+    display: block !important;
+  }
+
+  .floor-plan-canvas-scaler {
+    width: 1000px !important;
+    min-width: 1000px !important;
+    max-width: 1000px !important;
+    height: 600px !important;
+    transform-origin: top left !important;
+    transform: scale(0.718) !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+  }
+
+  /* 7. Hide admin hover action bubbles during print */
+  .group:hover .opacity-0,
+  .group-hover\:opacity-100 {
+    display: none !important;
+  }
+
+  /* 8. Table & Row Pagination: Multi-page clean sheet flow */
+  table,
+  .reservation-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead,
+  .reservation-table thead {
+    display: table-header-group !important;
+  }
+
+  tbody,
+  .reservation-table tbody {
+    display: table-row-group !important;
+  }
+
+  tr,
+  .reservation-row,
+  .page-break-avoid,
+  .print-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .page-break-before {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  .page-break-after {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  /* 9. Fullscreen Modal Print Normalization */
+  /* This ensures that when a modal (like Cronograma or Floor Plan fullscreen) is open, ONLY the modal content prints */
+  
+  /* Reset the modal container itself so it flows like a normal page instead of being fixed/scrollable */
+  .fixed.inset-0,
+  .fixed.inset-0.z-\[9990\],
+  .fixed.inset-0.z-\[9999\],
+  .fixed.inset-0.z-\[100\],
+  .fixed.inset-0.z-\[105\],
+  .fixed.inset-0.z-50 {
+    position: absolute !important; /* Use absolute instead of static to prevent layout collapses */
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    background: white !important;
+    color: black !important;
+    overflow: visible !important; /* Allow content to overflow for page breaks */
+    padding: 0 !important;
+    display: block !important;
+  }
+
+  /* When a modal is open, hide EVERYTHING else on the page that is not the modal or a child of the modal */
+  body:has(.fixed.inset-0) *:not(.fixed.inset-0):not(:has(.fixed.inset-0)):not(.fixed.inset-0 *) {
+    display: none !important;
+  }
+
+  /* Strip all backgrounds, borders, and margins from the parent containers of the modal so it sits flush to the page */
+  body:has(.fixed.inset-0) *:has(.fixed.inset-0) {
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  
+  /* Make sure any scrolling areas inside the modal expand fully to print their entire contents */
+  .fixed.inset-0 .overflow-auto,
+  .fixed.inset-0 .overflow-y-auto,
+  .fixed.inset-0 .overflow-hidden,
+  .fixed.inset-0 .custom-scrollbar {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    padding-bottom: 0 !important; /* Removes padding like pb-[50px] that stretches the page unnecessarily */
+  }
+
+  /* Specifically force the Cronograma grid to expand in height */
+  .fixed.inset-0 .flex-1.overflow-hidden.flex.flex-col,
+  .fixed.inset-0 .flex-grow {
+    flex: none !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Target the Cronograma internal scrolling container directly */
+  .fixed.inset-0 .custom-scrollbar {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* Target the Cronograma internal scrolling container directly */
+  .fixed.inset-0 .custom-scrollbar {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    padding-bottom: 0 !important;
+  }
+
+  /* 10. Document mode sheets */
+  .print-sheet {
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+}
+
+/* Hide scrollbar visually while keeping it scrollable */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
