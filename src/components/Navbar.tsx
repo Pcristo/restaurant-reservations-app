@@ -479,38 +479,10 @@ export default function Navbar() {
                 </Link>
               </div>
             )}
-            
-            {/* Test Button: Open in New Tab (Desktop) */}
-            <button
-              onClick={() => window.open(window.location.href, '_blank')}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors border shadow-sm ml-2",
-                settings?.theme === 'dark' 
-                  ? "bg-blue-900/30 border-blue-800/50 text-blue-400 hover:bg-blue-900/50 hover:text-blue-300" 
-                  : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-              )}
-              title="Open in new tab (Testing)"
-            >
-              <Globe size={14} />
-            </button>
           </div>
 
           {/* Mobile menu button */}
           <div className="min-[1240px]:hidden flex items-center gap-3">
-            {/* Test Button: Open in New Tab (Mobile) */}
-            <button
-              onClick={() => window.open(window.location.href, '_blank')}
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold rounded-lg transition-colors border shadow-sm",
-                settings?.theme === 'dark' 
-                  ? "bg-blue-900/30 border-blue-800/50 text-blue-400 hover:bg-blue-900/50 hover:text-blue-300" 
-                  : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-              )}
-              title="Open in new tab"
-            >
-              <Globe size={14} />
-            </button>
-
             {!isOnline && (
               <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/25 animate-pulse">
                 <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />

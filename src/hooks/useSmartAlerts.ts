@@ -32,13 +32,13 @@ export function useSmartAlerts() {
   const [tables, setTables] = useState<Table[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
-  const { isStaff, isAdmin } = useAuth();
+  const { isStaff, isAdmin, loading: authLoading } = useAuth();
   const { settings, loading: settingsLoading } = useSettings();
   const { language } = useLanguage();
   
   // Fetch tables and areas for capacity alerts
   useEffect(() => {
-    if (!isStaff && !isAdmin) return;
+    if (authLoading || (!isStaff && !isAdmin)) return;
     const unsubTables = onSnapshot(collection(db, 'tables'), (snapshot) => {
       setTables(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Table)));
     });
@@ -49,13 +49,15 @@ export function useSmartAlerts() {
       unsubTables();
       unsubAreas();
     };
-  }, [isStaff, isAdmin]);
+  }, [isStaff, isAdmin, authLoading]);
 
   // 1. Fetch smart alerts from Firestore
   useEffect(() => {
-    if (!isStaff && !isAdmin) {
-      setAlerts([]);
-      setLoading(false);
+    if (authLoading || (!isStaff && !isAdmin)) {
+      if (!authLoading) {
+        setAlerts([]);
+        setLoading(false);
+      }
       return;
     }
 
@@ -75,7 +77,7 @@ export function useSmartAlerts() {
     });
 
     return () => unsubscribe();
-  }, [isStaff, isAdmin]);
+  }, [isStaff, isAdmin, authLoading]);
 
   const runCleanup = async (currentAlerts: SmartAlert[]) => {
     const now = new Date();

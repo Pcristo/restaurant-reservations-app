@@ -54,10 +54,12 @@ export default function AdminCustomers() {
   const { customers, addCustomer, updateCustomer, deleteCustomer, loading } = useCustomers();
   const { tables } = useTables();
   const { language, t } = useLanguage();
+  const { isStaff, isAdmin, loading: authLoading } = useAuth();
 
   const [registeredUsers, setRegisteredUsers] = useState<Record<string, { id?: string; email: string; status: string; createdAt?: any }>>({});
 
   useEffect(() => {
+    if (authLoading || (!isStaff && !isAdmin)) return;
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersMap: Record<string, { id?: string; email: string; status: string; createdAt?: any }> = {};
       snapshot.docs.forEach(doc => {
@@ -83,7 +85,7 @@ export default function AdminCustomers() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isStaff, isAdmin, authLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>, max: number, fieldName: string) => {
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -98,7 +100,6 @@ export default function AdminCustomers() {
     }
   };
   const { settings } = useSettings();
-  const { isAdmin } = useAuth();
   const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [filterType, setFilterType] = useState<'all' | 'registered' | 'suspended'>('all');

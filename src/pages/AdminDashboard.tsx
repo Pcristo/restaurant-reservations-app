@@ -119,7 +119,7 @@ const getTranslatedAlertMessage = (alert: any, lang: string) => {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { user, isStaff, isAdmin } = useAuth();
+  const { user, isStaff, isAdmin, loading: authLoading } = useAuth();
   const { settings } = useSettings();
   const { reservations, updateReservation, loading: resLoading } = useReservations({ includeAll: true });
   const { tables, loading: tablesLoading } = useTables();
@@ -153,6 +153,7 @@ export default function AdminDashboard() {
   const [registeredUsers, setRegisteredUsers] = React.useState<Record<string, { id?: string; email: string; status: string; createdAt?: any }>>({});
 
   React.useEffect(() => {
+    if (authLoading || (!isStaff && !isAdmin)) return;
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersMap: Record<string, { id?: string; email: string; status: string; createdAt?: any }> = {};
       snapshot.docs.forEach(doc => {
@@ -180,7 +181,7 @@ export default function AdminDashboard() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isStaff, isAdmin, authLoading]);
 
   const isCustomerRegistered = (c: Customer) => {
     return !!(c.isRegistered || registeredUsers[c.id] || (c.email && registeredUsers[c.email.toLowerCase()]));

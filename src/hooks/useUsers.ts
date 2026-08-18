@@ -3,14 +3,21 @@ import { collection, onSnapshot, updateDoc, doc, deleteDoc, setDoc, serverTimest
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db } from '../firebase';
+import { useAuth } from './useAuth';
 import { User } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export function useUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isStaff, isAdmin, loading: authLoading } = useAuth();
 
   useEffect(() => {
+    if (authLoading || (!isStaff && !isAdmin)) {
+      if (!authLoading) setLoading(false);
+      return;
+    }
+
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
       const usersData = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as User))
@@ -23,7 +30,7 @@ export function useUsers() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isStaff, isAdmin, authLoading]);
 
   const updateUserRole = async (id: string, role: string) => {
     await updateDoc(doc(db, 'users', id), { role });
@@ -72,12 +79,9 @@ export function useUsers() {
         }
         
         const uid = result.user.uid;
-        let friendlyId = userData.email ? userData.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'user';
-        friendlyId += '-' + Math.random().toString(36).substring(2, 6);
-        const newId = friendlyId;
-        await setDoc(doc(db, 'users', newId), {
+        await setDoc(doc(db, 'users', uid), {
           ...userData,
-          id: newId,
+          id: uid,
           authUid: uid,
           createdAt: serverTimestamp(),
         });
@@ -88,9 +92,6 @@ export function useUsers() {
         throw error;
       }
     } else {
-      // Logic for adding just the document (e.g. for Google users who will sign in later)
-      // Note: This won't work for login unless they sign in with Google.
-      // For now, let's assume if no password, it's just a placeholder.
       let friendlyId = userData.email ? userData.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'user';
       friendlyId += '-' + Math.random().toString(36).substring(2, 6);
       

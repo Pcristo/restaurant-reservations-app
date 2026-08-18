@@ -171,8 +171,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   userData.role = 'admin';
                   try {
                     await setDoc(doc(db, 'users', docSnap.id), { role: 'admin' }, { merge: true });
+                    await setDoc(doc(db, 'users', firebaseUser.uid), { role: 'admin' }, { merge: true });
                   } catch (e) {
                     console.error('Error promoting admin user:', e);
+                  }
+                }
+
+                // Ensure document exists at /users/{firebaseUser.uid}
+                if (docSnap.id !== firebaseUser.uid) {
+                  try {
+                    await setDoc(doc(db, 'users', firebaseUser.uid), {
+                      ...userData,
+                      id: firebaseUser.uid,
+                      authUid: firebaseUser.uid,
+                      role: isAdminEmail ? 'admin' : (userData.role || 'staff'),
+                    }, { merge: true });
+                  } catch (migErr) {
+                    console.warn('User UID migration notice:', migErr);
                   }
                 }
 

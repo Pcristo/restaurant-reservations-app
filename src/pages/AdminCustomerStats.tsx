@@ -33,6 +33,8 @@ export default function AdminCustomerStats() {
   }, [isAdmin, authLoading, settingsLoading, navigate]);
 
   useEffect(() => {
+    if (authLoading || !isAdmin) return;
+
     const unsubCustomers = onSnapshot(collection(db, 'customers'), (snapshot) => {
       setCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer)));
     }, (error) => {
@@ -51,7 +53,7 @@ export default function AdminCustomerStats() {
       unsubCustomers();
       unsubReservations();
     };
-  }, []);
+  }, [isAdmin, authLoading]);
 
   // Pre-calculate stats for each customer
   const customerStatsMap = useMemo(() => {

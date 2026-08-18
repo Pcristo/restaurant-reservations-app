@@ -735,27 +735,21 @@ export default function PublicBooking() {
         return !hasOverlap;
       });
 
-      // Fetch customer and check for favorite tables
+      // Fetch customer and check for favorite tables if authenticated
       let favoriteTablesList: string[] = [];
       let isCustomerRegular = false;
-      const emailToFind = formData.email?.trim().toLowerCase();
-      if (emailToFind) {
+      if (user?.id) {
         try {
-          const q = query(collection(db, 'customers'));
-          const querySnapshot = await getDocs(q);
-          const matchingCustomer = querySnapshot.docs.find(doc => {
-            const data = doc.data();
-            return data.email?.trim().toLowerCase() === emailToFind;
-          });
-          if (matchingCustomer) {
-            const customerData = matchingCustomer.data();
+          const custDoc = await getDoc(doc(db, 'customers', user.id));
+          if (custDoc.exists()) {
+            const customerData = custDoc.data();
             isCustomerRegular = !!customerData.isRegular;
             if (customerData.favoriteTables && Array.isArray(customerData.favoriteTables)) {
               favoriteTablesList = customerData.favoriteTables;
             }
           }
         } catch (err) {
-          console.error('Error fetching customer for booking:', err);
+          console.warn('Non-fatal customer preference lookup error:', err);
         }
       }
 

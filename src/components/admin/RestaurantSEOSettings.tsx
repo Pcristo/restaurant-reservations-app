@@ -111,6 +111,34 @@ export const RestaurantSEOSettings: React.FC<RestaurantSEOSettingsProps> = ({
   const effectiveCanonicalUrl = seo.canonicalUrl || seo.ogUrl || `${originUrl}/`;
   const effectiveSiteName = seo.siteName || formData.name || 'Restaurant';
 
+  // Compute canonical target URL for opening in a new tab
+  const targetCanonicalOpenUrl = useMemo(() => {
+    let raw = (seo.ogUrl ?? seo.canonicalUrl ?? '').trim() || effectiveCanonicalUrl;
+    if (!raw) return typeof window !== 'undefined' ? window.location.href : 'https://ais-dev-idlaianzpuyrtvowgfgtgg-592543217952.europe-west2.run.app';
+    raw = raw.replace(/^(link:\s*)+/i, '').trim();
+    return raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`;
+  }, [seo.ogUrl, seo.canonicalUrl, effectiveCanonicalUrl]);
+
+  // Derive the display domain/link without any "link:" prefix for the social share preview bottom card
+  const socialDisplayLink = useMemo(() => {
+    let rawUrl = (seo.ogUrl || seo.canonicalUrl || '').trim() || effectiveCanonicalUrl;
+    if (!rawUrl) {
+      return (typeof window !== 'undefined' && window.location.hostname) 
+        ? window.location.hostname.toLowerCase() 
+        : 'restaurant-reservations-app.pedro-cristo-webdeveloper.workers.dev';
+    }
+    // Remove any accidental "link:" prefix
+    rawUrl = rawUrl.replace(/^(link:\s*)+/i, '').trim();
+    try {
+      const parsed = new URL(rawUrl.startsWith('http://') || rawUrl.startsWith('https://') ? rawUrl : `https://${rawUrl}`);
+      const host = parsed.hostname || rawUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      return host.toLowerCase();
+    } catch {
+      const cleanHost = rawUrl.replace(/^https?:\/\//i, '').split('/')[0];
+      return cleanHost.toLowerCase();
+    }
+  }, [seo.ogUrl, seo.canonicalUrl, effectiveCanonicalUrl]);
+
   // Favicon for Google SERP Preview (Admin configured custom favicon or default)
   const customFavicon = getOptimizedUrl(formData.faviconUrl, formData, 'favicon') ||
     (formData.useCloudinary && formData.cloudinaryFaviconUrl ? formData.cloudinaryFaviconUrl : formData.faviconUrl) ||
@@ -730,18 +758,49 @@ export const RestaurantSEOSettings: React.FC<RestaurantSEOSettingsProps> = ({
               <label className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
                 {t('settings.seo_og_url')}
               </label>
-              <span className="text-[10px] font-mono text-gray-400">og:url / canonical</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-mono text-gray-400">og:url / canonical</span>
+              </div>
             </div>
-            <input
-              type="url"
-              value={seo.ogUrl ?? seo.canonicalUrl ?? ''}
-              onChange={(e) => updateSEO({ ogUrl: e.target.value, canonicalUrl: e.target.value })}
-              placeholder={effectiveCanonicalUrl}
-              className={cn(
-                "w-full px-3.5 py-2.5 text-sm font-mono border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-colors",
-                isDark ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-              )}
-            />
+            <div className="relative flex items-center">
+              <input
+                type="url"
+                value={seo.ogUrl ?? seo.canonicalUrl ?? ''}
+                onChange={(e) => updateSEO({ ogUrl: e.target.value, canonicalUrl: e.target.value })}
+                placeholder={effectiveCanonicalUrl}
+                className={cn(
+                  "w-full pl-3.5 pr-20 py-2.5 text-sm font-mono border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-colors",
+                  isDark ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                )}
+              />
+              <div className="absolute right-1.5 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const urlToCopy = (seo.ogUrl ?? seo.canonicalUrl ?? '').trim() || effectiveCanonicalUrl;
+                    navigator.clipboard.writeText(urlToCopy);
+                    toast.success(language === 'pt' ? 'URL copiado!' : 'URL copied to clipboard!');
+                  }}
+                  className={cn(
+                    "p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                  )}
+                  title={language === 'pt' ? 'Copiar URL' : 'Copy URL'}
+                >
+                  <Copy size={15} />
+                </button>
+                <a
+                  href={targetCanonicalOpenUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    "p-1.5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer flex items-center justify-center"
+                  )}
+                  title={language === 'pt' ? 'Abrir URL numa nova aba' : 'Open URL in new tab'}
+                >
+                  <ExternalLink size={15} />
+                </a>
+              </div>
+            </div>
             <p className="text-[11px] text-gray-500 dark:text-gray-400">
               {t('settings.seo_og_url_desc')}
             </p>
@@ -1462,13 +1521,27 @@ export const RestaurantSEOSettings: React.FC<RestaurantSEOSettingsProps> = ({
               >
                 <div
                   className={cn(
-                    "text-[10px] uppercase font-bold tracking-wider truncate",
+                    "text-[10px] font-medium tracking-normal truncate flex items-center gap-1",
                     isCustomSocialBoxBg
                       ? (isColorBright(customSocialBoxBg) ? "text-gray-500" : "text-gray-400")
                       : "text-gray-400"
                   )}
                 >
-                  {typeof window !== 'undefined' ? window.location.hostname : 'restaurant.com'}
+                  <a
+                    href={targetCanonicalOpenUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className={cn(
+                      "truncate transition-colors hover:underline flex items-center gap-1 cursor-pointer",
+                      isCustomSocialBoxBg
+                        ? (isColorBright(customSocialBoxBg) ? "hover:text-amber-700 text-gray-500" : "hover:text-amber-300 text-gray-400")
+                        : "hover:text-amber-500 text-gray-400"
+                    )}
+                    title={language === 'pt' ? 'Abrir link' : 'Open link'}
+                  >
+                    <span className="truncate">{socialDisplayLink}</span>
+                  </a>
                 </div>
                 <div
                   className={cn(
@@ -1616,19 +1689,51 @@ export const RestaurantSEOSettings: React.FC<RestaurantSEOSettingsProps> = ({
 
         {/* Custom Canonical URL */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
-            {t('settings.seo_canonical_url')}
-          </label>
-          <input
-            type="url"
-            value={seo.canonicalUrl ?? seo.ogUrl ?? ''}
-            onChange={(e) => updateSEO({ canonicalUrl: e.target.value, ogUrl: e.target.value })}
-            placeholder={effectiveCanonicalUrl}
-            className={cn(
-              "w-full px-3.5 py-2.5 text-xs font-mono border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-colors",
-              isDark ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-            )}
-          />
+          <div className="flex justify-between items-center">
+            <label className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400">
+              {t('settings.seo_canonical_url')}
+            </label>
+            <span className="text-[10px] font-mono text-gray-400">rel="canonical"</span>
+          </div>
+          <div className="relative flex items-center">
+            <input
+              type="url"
+              value={seo.canonicalUrl ?? seo.ogUrl ?? ''}
+              onChange={(e) => updateSEO({ canonicalUrl: e.target.value, ogUrl: e.target.value })}
+              placeholder={effectiveCanonicalUrl}
+              className={cn(
+                "w-full pl-3.5 pr-20 py-2.5 text-xs font-mono border rounded-lg focus:ring-2 focus:ring-amber-500 outline-none transition-colors",
+                isDark ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500" : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+              )}
+            />
+            <div className="absolute right-1.5 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const urlToCopy = (seo.canonicalUrl ?? seo.ogUrl ?? '').trim() || effectiveCanonicalUrl;
+                  navigator.clipboard.writeText(urlToCopy);
+                  toast.success(language === 'pt' ? 'URL copiado!' : 'URL copied to clipboard!');
+                }}
+                className={cn(
+                  "p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                )}
+                title={language === 'pt' ? 'Copiar URL' : 'Copy URL'}
+              >
+                <Copy size={14} />
+              </button>
+              <a
+                href={targetCanonicalOpenUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "p-1.5 rounded-md hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer flex items-center justify-center"
+                )}
+                title={language === 'pt' ? 'Abrir URL numa nova aba' : 'Open URL in new tab'}
+              >
+                <ExternalLink size={14} />
+              </a>
+            </div>
+          </div>
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
             {t('settings.seo_canonical_desc')}
           </p>

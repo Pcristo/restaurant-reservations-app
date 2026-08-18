@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from './useAuth';
 import { Customer } from '../types';
 
 const generateFriendlyId = (text: string) => {
@@ -39,8 +40,14 @@ const generateFriendlyId = (text: string) => {
 export function useCustomers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
+  const { isStaff, isAdmin, loading: authLoading } = useAuth();
 
   useEffect(() => {
+    if (authLoading || (!isStaff && !isAdmin)) {
+      if (!authLoading) setLoading(false);
+      return;
+    }
+
     const unsubscribe = onSnapshot(collection(db, 'customers'), (snapshot) => {
       const customersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer));
       setCustomers(customersData);
@@ -51,7 +58,7 @@ export function useCustomers() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isStaff, isAdmin, authLoading]);
 
   const activeCustomers = customers.filter(c => !c.isDeleted && !c.isHistory);
   const deletedCustomers = customers.filter(c => c.isDeleted && !c.isHistory);
