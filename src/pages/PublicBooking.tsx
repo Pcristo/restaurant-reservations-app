@@ -975,8 +975,20 @@ export default function PublicBooking() {
            } as any);
         }
 
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error sending confirmation email:', err);
+        try {
+          await updateReservation(addedRes.id, {
+            confirmationEmail: {
+              sent: false,
+              failed: true,
+              error: err?.message || 'Network or parse error sending confirmation email',
+              lastAttemptAt: new Date().toISOString()
+            }
+          } as any);
+        } catch (updateErr) {
+          console.error('Failed to update reservation with email error:', updateErr);
+        }
       }
 
       // We no longer update the customer profile with booking form data
