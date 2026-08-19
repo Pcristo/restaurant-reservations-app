@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, deleteDoc, doc, setDoc, getDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from './useAuth';
 import { Customer } from '../types';
@@ -67,9 +67,17 @@ export function useCustomers() {
   const addCustomer = async (customer: Omit<Customer, 'id'>) => {
     if (customer.email && customer.email.trim() !== '') {
       const emailLower = customer.email.trim().toLowerCase();
+      // Check activeCustomers first for speed
       const existing = activeCustomers.find(c => c.email?.trim().toLowerCase() === emailLower);
       if (existing) {
         throw new Error("A customer with this email already exists.");
+      }
+      
+      // Strict database check
+      const qCust = query(collection(db, 'customers'), where('email', '==', emailLower));
+      const snapCust = await getDocs(qCust);
+      if (!snapCust.empty) {
+        throw new Error("A customer with this email already exists in the database.");
       }
     }
     const cleanCustomer = Object.fromEntries(
@@ -94,6 +102,17 @@ export function useCustomers() {
       const existing = activeCustomers.find(c => c.email?.trim().toLowerCase() === emailLower && c.id !== id);
       if (existing) {
         throw new Error("A customer with this email already exists.");
+      }
+
+      // Strict database check
+      const qCust = query(collection(db, 'customers'), where('email', '==', emailLower));
+      const snapCust = await getDocs(qCust);
+      let isDuplicate = false;
+      snapCust.docs.forEach(docSnap => {
+        if (docSnap.id !== id) isDuplicate = true;
+      });
+      if (isDuplicate) {
+        throw new Error("A customer with this email already exists in the database.");
       }
     }
     const cleanCustomer = Object.fromEntries(

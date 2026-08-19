@@ -12,8 +12,8 @@ export default function TermsAndConditions() {
 
   const isDark = settings?.theme === 'dark';
   const restaurantName = settings?.name || APP_CONFIG.appName;
-  const phone = settings?.phone || '+351 210 000 000';
-  const email = settings?.email || 'contact@dinemaster.com';
+  const phone = settings?.phone || APP_CONFIG.phone;
+  const email = settings?.email || APP_CONFIG.email;
   const maxGuests = settings?.maxOnlineGuests || 10;
   const gracePeriod = settings?.gracePeriod || 15;
 

@@ -6,8 +6,10 @@ export interface User {
   role: UserRole;
   status: 'active' | 'inactive';
   name?: string;
+  phone?: string;
   staffNumber?: string;
   authUid?: string;
+  authProvider?: string;
   createdAt?: any;
 }
 
@@ -339,8 +341,11 @@ export interface Reservation {
   session?: 'lunch' | 'dinner' | string;
   confirmationEmail?: {
     sent: boolean;
-    sentAt: string | null;
+    sentAt?: string | null;
     messageId?: string;
+    failed?: boolean;
+    error?: string;
+    lastAttemptAt?: string;
   };
   reminderEmail?: {
     scheduled: boolean;

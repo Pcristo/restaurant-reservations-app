@@ -3066,6 +3066,9 @@ export default function AdminSettings() {
                             resendFromEmail: formData.resendFromEmail,
                             restaurantName: formData.name || settings?.name || APP_CONFIG.appName,
                             logoUrl: formData.logoUrl || (formData.useCloudinary ? formData.cloudinaryLogoUrl : '') || settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
+                            restaurantEmail: formData.email || settings?.email || APP_CONFIG.email,
+                            restaurantPhone: formData.phone || settings?.phone || APP_CONFIG.phone,
+                            restaurantAddress: formData.address || settings?.address || APP_CONFIG.address,
                             language,
                           })
                         });

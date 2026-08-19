@@ -102,19 +102,19 @@ export default function Footer() {
             </div>
             <p className="text-gray-300 max-w-xs">
               {language === 'en'
-                ? (settings?.descriptionEn || settings?.description || t('public.hero_subtitle'))
-                : (settings?.description || settings?.descriptionEn || t('public.hero_subtitle'))}
+                ? (settings?.descriptionEn || settings?.description || APP_CONFIG.description || t('public.hero_subtitle'))
+                : (settings?.description || settings?.descriptionEn || APP_CONFIG.description || t('public.hero_subtitle'))}
             </p>
             <div className="space-y-3">
               <div className="flex items-start gap-3 text-gray-300">
                 <MapPin className="text-amber-500 shrink-0 mt-1" size={18} />
-                <span>{settings?.address || '123 Gourmet Street, Food City'}</span>
+                <span>{settings?.address || APP_CONFIG.address}</span>
               </div>
               
               {/* Primary Phone */}
               <div className="flex items-center gap-3 text-gray-300">
                 <Phone className="text-amber-500 shrink-0" size={18} />
-                <span>{settings?.phone || '+1 (555) 123-4567'}</span>
+                <span>{settings?.phone || APP_CONFIG.phone}</span>
               </div>
 
               {/* Secondary Phone */}
@@ -127,7 +127,7 @@ export default function Footer() {
 
               <div className="flex items-center gap-3 text-gray-300">
                 <Mail className="text-amber-500 shrink-0" size={18} />
-                <span>{settings?.email || 'contact@dinemaster.com'}</span>
+                <span>{settings?.email || APP_CONFIG.email}</span>
               </div>
             </div>
 

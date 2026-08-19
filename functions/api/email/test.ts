@@ -15,6 +15,8 @@ export async function onRequestPost(context: any) {
       email: body.email,
       restaurantName: body.restaurantName,
       logoUrl: body.logoUrl,
+      restaurantEmail: body.restaurantEmail,
+      restaurantPhone: body.restaurantPhone,
       language: body.language
     });
 

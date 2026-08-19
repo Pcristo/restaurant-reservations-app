@@ -6,10 +6,13 @@ import { Reservation } from '../types';
 import { useLanguage } from '../hooks/useLanguage';
 import { XCircle, CheckCircle, Calendar, Users, Clock, ArrowLeft } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { useSettings } from '../hooks/useSettings';
+import { formatDisplayTime } from '../lib/utils';
 
 export default function PublicCancel() {
   const { id } = useParams<{ id: string }>();
   const { t } = useLanguage();
+  const { settings } = useSettings();
   const [reservation, setReservation] = useState<Reservation | null>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<'idle' | 'cancelling' | 'success' | 'error'>('idle');
@@ -48,7 +51,7 @@ export default function PublicCancel() {
              id: alertId,
              type: 'cancelled_by_customer',
              title: 'Reservation Cancelled',
-             message: `Customer ${reservation.customerName} cancelled their reservation for ${reservation.date} at ${reservation.time}.`,
+             message: `Customer ${(reservation.customerName || '').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')} cancelled their reservation for ${reservation.date.split('-').reverse().join('/')} at ${formatDisplayTime(reservation.time, settings)}.`,
              severity: 'medium',
              status: 'active',
              relatedReservationIds: [reservation.id],

@@ -64,6 +64,8 @@ export const sendTestEmail = async (opts: {
   resendFromEmail?: string;
   restaurantName?: string;
   logoUrl?: string;
+  restaurantEmail?: string;
+  restaurantPhone?: string;
   language?: string;
 }) => {
   const { subject, html } = buildTestEmail(opts);

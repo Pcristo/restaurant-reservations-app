@@ -12,8 +12,8 @@ export default function PrivacyPolicy() {
 
   const isDark = settings?.theme === 'dark';
   const restaurantName = settings?.name || APP_CONFIG.appName;
-  const email = settings?.email || 'privacy@dinemaster.com';
-  const address = settings?.address || 'Portugal';
+  const email = settings?.email || APP_CONFIG.email;
+  const address = settings?.address || APP_CONFIG.address;
 
   return (
     <div className={cn(

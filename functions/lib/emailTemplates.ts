@@ -48,9 +48,9 @@ export function generateSchemaMarkup(opts: EmailOptions, status: 'ReservationCon
       "name": displayName,
       "address": {
         "@type": "PostalAddress",
-        "streetAddress": opts.restaurantAddress || "N/A"
+        "streetAddress": (opts.restaurantAddress || '').trim() || "123 Example Street, Dublin, D01 XXXX, Ireland"
       },
-      "telephone": opts.restaurantPhone || ""
+      "telephone": (opts.restaurantPhone || '').trim() || "+353 1 555 0100"
     },
     "startTime": startTime,
     "partySize": opts.guests
@@ -87,7 +87,7 @@ export function getBaseHtml(opts: EmailOptions, title: string, content: string, 
   const logoHtml = opts.logoUrl
     ? `<div style="text-align: center; margin-bottom: 24px;">
          <img src="${opts.logoUrl}" alt="${displayName}" style="max-height: 70px; max-width: 220px; object-fit: contain; display: inline-block; vertical-align: middle;" />
-         <div style="font-size: 19px; font-weight: 700; color: #111827; margin-top: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; letter-spacing: -0.3px;">
+         <div style="font-size: 19px; font-weight: 700; color: #111827; margin-top: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: -0.3px;">
            ${displayName}
          </div>
        </div>`
@@ -95,12 +95,12 @@ export function getBaseHtml(opts: EmailOptions, title: string, content: string, 
          <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto;">
            <tr>
              <td style="vertical-align: middle; padding-right: 10px;">
-               <div style="width: 36px; height: 36px; background-color: #d97706; border-radius: 8px; text-align: center; line-height: 36px; color: #ffffff; font-size: 18px; font-weight: bold; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+               <div style="width: 36px; height: 36px; background-color: #d97706; border-radius: 8px; text-align: center; line-height: 36px; color: #ffffff; font-size: 18px; font-weight: bold; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                  ${initialLetter}
                </div>
              </td>
              <td style="vertical-align: middle;">
-               <span style="font-size: 20px; font-weight: 700; color: #111827; letter-spacing: -0.3px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+               <span style="font-size: 20px; font-weight: 700; color: #111827; letter-spacing: -0.3px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
                  ${displayName}
                </span>
              </td>
@@ -108,7 +108,8 @@ export function getBaseHtml(opts: EmailOptions, title: string, content: string, 
          </table>
        </div>`;
 
-  const contactEmail = opts.restaurantEmail || 'rnortada@sapo.pt';
+  const contactEmail = (opts.restaurantEmail || '').trim() || 'hello@dinemasterpro.com';
+  const contactPhone = (opts.restaurantPhone || '').trim() || '+353 1 555 0100';
   const isPt = opts.language === 'pt';
 
   return `<!DOCTYPE html>
@@ -126,8 +127,8 @@ export function getBaseHtml(opts: EmailOptions, title: string, content: string, 
     <p style="font-size: 12px; color: #6b7280; text-align: center; line-height: 1.6; margin: 0 0 12px 0;">
       <strong>${isPt ? 'Por favor, não responda a este email.' : 'Please do not reply to this email.'}</strong><br><br>
       ${isPt 
-        ? `Para quaisquer questões ou alterações, por favor contacte-nos diretamente através de <a href="mailto:${contactEmail}" style="color: #d97706; text-decoration: none; font-weight: bold;">${contactEmail}</a> ou ligue para <strong>${opts.restaurantPhone || '+351 21 929 1516'}</strong>.`
-        : `For any inquiries or changes, please contact us directly at <a href="mailto:${contactEmail}" style="color: #d97706; text-decoration: none; font-weight: bold;">${contactEmail}</a> or call <strong>${opts.restaurantPhone || '+351 21 929 1516'}</strong>.`}<br><br>
+        ? `Para quaisquer questões ou alterações, por favor contacte-nos diretamente através de <a href="mailto:${contactEmail}" style="color: #d97706; text-decoration: none; font-weight: bold;">${contactEmail}</a> ou ligue para <strong>${contactPhone}</strong>.`
+        : `For any inquiries or changes, please contact us directly at <a href="mailto:${contactEmail}" style="color: #d97706; text-decoration: none; font-weight: bold;">${contactEmail}</a> or call <strong>${contactPhone}</strong>.`}<br><br>
       ${isPt ? 'Se precisar de cancelar ou modificar a sua reserva, agradecemos que o faça com a maior antecedência possível.' : 'If you need to cancel or modify your reservation, please let us know as early as possible.'}
     </p>
     <p style="font-size: 11px; color: #9ca3af; text-align: center; margin: 0;">
@@ -284,6 +285,8 @@ export function buildTestEmail(opts: {
   email: string;
   restaurantName?: string;
   logoUrl?: string;
+  restaurantEmail?: string;
+  restaurantPhone?: string;
   language?: string;
 }): { subject: string; html: string } {
   const isPt = opts.language === 'pt';
@@ -312,6 +315,8 @@ export function buildTestEmail(opts: {
       guests: 2,
       restaurantName: displayName,
       logoUrl: opts.logoUrl,
+      restaurantEmail: opts.restaurantEmail,
+      restaurantPhone: opts.restaurantPhone,
       language: opts.language,
     } as any, title, content, 'ReservationConfirmed')
   };

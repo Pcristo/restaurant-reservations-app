@@ -141,6 +141,103 @@ export default function PublicBooking() {
   const [isCheckingCode, setIsCheckingCode] = useState(false);
   const [verificationError, setVerificationError] = useState('');
 
+  // Auto-fill form data with customer profile from database when logged in
+  useEffect(() => {
+    if (!user) return;
+
+    let isMounted = true;
+    const fetchCustomerProfile = async () => {
+      try {
+        let name = user.name || '';
+        let email = user.email || '';
+        let phone = user.phone || '';
+
+        // 1. Direct fetch from 'customers' collection by user.id or user.authUid
+        const docId = user.id || user.authUid;
+        if (docId) {
+          try {
+            const custSnap = await getDoc(doc(db, 'customers', docId));
+            if (custSnap.exists()) {
+              const data = custSnap.data();
+              if (data.name) name = data.name;
+              if (data.email) email = data.email;
+              if (data.phone) phone = data.phone;
+            }
+          } catch (e) {
+            console.warn('Error fetching customer record:', e);
+          }
+        }
+
+        // 2. If phone or other details are still missing, query 'customers' by authUid or email
+        if (!phone || !name) {
+          try {
+            if (user.authUid || user.id) {
+              const qCust = query(collection(db, 'customers'), where('authUid', '==', user.authUid || user.id));
+              const snapCust = await getDocs(qCust);
+              if (!snapCust.empty) {
+                const data = snapCust.docs[0].data();
+                if (data.name && !name) name = data.name;
+                if (data.email && !email) email = data.email;
+                if (data.phone && !phone) phone = data.phone;
+              }
+            }
+          } catch (e) {}
+
+          if ((!phone || !name) && (email || user.email)) {
+            try {
+              const qCust = query(collection(db, 'customers'), where('email', '==', (email || user.email).trim().toLowerCase()));
+              const snapCust = await getDocs(qCust);
+              if (!snapCust.empty) {
+                const data = snapCust.docs[0].data();
+                if (data.name && !name) name = data.name;
+                if (data.phone && !phone) phone = data.phone;
+              }
+            } catch (e) {}
+          }
+        }
+
+        // 3. Fallback to 'users' collection
+        if (!phone || !name) {
+          try {
+            const userRef = doc(db, 'users', user.id);
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const uData = userSnap.data();
+              if (uData.phone && !phone) phone = uData.phone;
+              if (uData.name && !name) name = uData.name;
+              if (uData.email && !email) email = uData.email;
+            }
+          } catch (e) {
+            console.warn('Error fetching user record:', e);
+          }
+        }
+
+        if (isMounted) {
+          setFormData(prev => ({
+            ...prev,
+            name: name || prev.name,
+            email: email || prev.email,
+            phone: phone || prev.phone,
+          }));
+
+          if (phone) {
+            setProfilePhone(phone);
+            setProfilePhoneVerified(true);
+            setIsPhoneVerified(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error prefilling customer data:', err);
+      }
+    };
+
+    fetchCustomerProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
   useEffect(() => {
     if (settings?.phoneVerificationEnabled) {
       if (user && user.role === 'customer' && profilePhoneVerified && formData.phone === profilePhone && profilePhone) {
@@ -315,41 +412,6 @@ export default function PublicBooking() {
       setShowPromoPopup(true);
     }
   }, [settings]);
-
-  useEffect(() => {
-    if (user && user.role === 'customer') {
-      const fetchCustomerData = async () => {
-        try {
-          const customerDoc = await getDoc(doc(db, 'customers', user.id));
-          if (customerDoc.exists()) {
-            const data = customerDoc.data();
-            const fetchedPhone = data.phone || '';
-            const isVerified = !!data.phoneVerified;
-            setProfilePhone(fetchedPhone);
-            setProfilePhoneVerified(isVerified);
-            setFormData(prev => ({
-              ...prev,
-              name: data.name || user.name || prev.name,
-              email: data.email || user.email || prev.email,
-              phone: fetchedPhone || prev.phone
-            }));
-            if (isVerified && fetchedPhone) {
-              setIsPhoneVerified(true);
-            }
-          } else {
-            setFormData(prev => ({
-              ...prev,
-              name: user.name || prev.name,
-              email: user.email || prev.email
-            }));
-          }
-        } catch (err) {
-          console.error('Error fetching customer data:', err);
-        }
-      };
-      fetchCustomerData();
-    }
-  }, [user]);
 
   const { availableSlots, sessionStatus } = React.useMemo(() => {
     if (!settings || !settings.openingHours || !tables.length || isClosed || !date) {
@@ -863,6 +925,9 @@ export default function PublicBooking() {
 
       // Send confirmation email
       try {
+        const apiKey = settings?.resendApiKey || (import.meta as any).env?.VITE_RESEND_API_KEY || (import.meta as any).env?.RESEND_API_KEY || '';
+        const fromEmail = settings?.resendFromEmail || (import.meta as any).env?.VITE_RESEND_FROM_EMAIL || (import.meta as any).env?.RESEND_FROM_EMAIL || '';
+
         const resEmail = await fetch('/api/email/confirmation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -873,13 +938,13 @@ export default function PublicBooking() {
             time: formatDisplayTime(selectedTime, settings),
             guests: guests,
             restaurantName: settings?.name || APP_CONFIG.appName,
-            resendApiKey: settings?.resendApiKey,
-            resendFromEmail: settings?.resendFromEmail,
+            resendApiKey: apiKey,
+            resendFromEmail: fromEmail,
             language: language,
             logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
-            restaurantEmail: settings?.email || '',
-            restaurantPhone: settings?.phone || '',
-            restaurantAddress: settings?.address || '',
+            restaurantEmail: settings?.email || APP_CONFIG.email,
+            restaurantPhone: settings?.phone || APP_CONFIG.phone,
+            restaurantAddress: settings?.address || APP_CONFIG.address,
             bookingNumber: addedRes?.bookingNumber || '',
             reservationId: addedRes?.id || '',
             timezone: settings?.timezone || 'Europe/Lisbon',

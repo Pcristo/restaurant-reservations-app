@@ -11,8 +11,22 @@ export interface SendEmailPayload {
 }
 
 export async function sendEmailViaResend(payload: SendEmailPayload, env: Record<string, any> = {}): Promise<{ success: boolean; messageId?: string; error?: string; status?: number }> {
-  let rawKey = (payload.apiKey || env.RESEND_API_KEY || '').trim();
-  let rawFrom = payload.fromEmail || env.RESEND_FROM_EMAIL || '';
+  let rawKey = (
+    payload.apiKey ||
+    env.RESEND_API_KEY ||
+    env.VITE_RESEND_API_KEY ||
+    (typeof process !== 'undefined' && (process.env?.RESEND_API_KEY || process.env?.VITE_RESEND_API_KEY)) ||
+    ''
+  ).trim();
+
+  let rawFrom = (
+    payload.fromEmail ||
+    env.RESEND_FROM_EMAIL ||
+    env.VITE_RESEND_FROM_EMAIL ||
+    (typeof process !== 'undefined' && (process.env?.RESEND_FROM_EMAIL || process.env?.VITE_RESEND_FROM_EMAIL)) ||
+    ''
+  ).trim();
+
   let restName = payload.restaurantName;
 
   // Fallback: Check Firestore settings if API key or from email not provided
@@ -34,9 +48,10 @@ export async function sendEmailViaResend(payload: SendEmailPayload, env: Record<
   }
 
   if (!rawKey || rawKey === 'undefined' || rawKey === 'null') {
+    console.error('[Resend Error] Missing RESEND_API_KEY');
     return {
       success: false,
-      error: 'RESEND_API_KEY is not configured in Cloudflare environment or settings.',
+      error: 'RESEND_API_KEY is not configured in environment or settings.',
       status: 400
     };
   }
@@ -70,7 +85,8 @@ export async function sendEmailViaResend(payload: SendEmailPayload, env: Record<
     const data: any = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const errMsg = data?.message || data?.error?.message || (typeof data === 'string' ? data : `Resend API rejected request with status ${res.status}`);
+      let errMsg = data?.message || data?.error?.message || (typeof data === 'string' ? data : `Resend API rejected request with status ${res.status}`);
+      console.error('[Resend API Error]:', { status: res.status, error: errMsg, to, from });
       return {
         success: false,
         error: errMsg,
@@ -78,12 +94,14 @@ export async function sendEmailViaResend(payload: SendEmailPayload, env: Record<
       };
     }
 
+    console.log('[Resend Success]: Email sent to', to, 'Message ID:', data?.id);
     return {
       success: true,
       messageId: data?.id,
       status: 200
     };
   } catch (err: any) {
+    console.error('[Resend Network Error]:', err);
     return {
       success: false,
       error: err?.message || 'Network error communicating with Resend API',

@@ -1118,13 +1118,13 @@ export default function AdminReservations() {
               time: formatDisplayTime(resData.time, settings),
               guests: resData.guests,
               restaurantName: settings?.name || APP_CONFIG.appName,
-              resendApiKey: settings?.resendApiKey,
-              resendFromEmail: settings?.resendFromEmail,
+              resendApiKey: settings?.resendApiKey || (import.meta as any).env?.VITE_RESEND_API_KEY || (import.meta as any).env?.RESEND_API_KEY || '',
+              resendFromEmail: settings?.resendFromEmail || (import.meta as any).env?.VITE_RESEND_FROM_EMAIL || (import.meta as any).env?.RESEND_FROM_EMAIL || '',
               language: resData.language || language,
               logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
-              restaurantEmail: settings?.email || '',
-              restaurantPhone: settings?.phone || '',
-              restaurantAddress: settings?.address || '',
+              restaurantEmail: settings?.email || APP_CONFIG.email,
+              restaurantPhone: settings?.phone || APP_CONFIG.phone,
+              restaurantAddress: settings?.address || APP_CONFIG.address,
               bookingNumber: addedRes?.bookingNumber || '',
               reservationId: addedRes?.id || '',
               timezone: settings?.timezone || 'Europe/Lisbon',
@@ -1229,13 +1229,13 @@ export default function AdminReservations() {
                 time: formatDisplayTime(resData.time, settings),
                 guests: resData.guests,
                 restaurantName: settings?.name || APP_CONFIG.appName,
-                resendApiKey: settings?.resendApiKey,
-                resendFromEmail: settings?.resendFromEmail,
+                resendApiKey: settings?.resendApiKey || (import.meta as any).env?.VITE_RESEND_API_KEY || (import.meta as any).env?.RESEND_API_KEY || '',
+                resendFromEmail: settings?.resendFromEmail || (import.meta as any).env?.VITE_RESEND_FROM_EMAIL || (import.meta as any).env?.RESEND_FROM_EMAIL || '',
                 language: resData.language || language,
                 logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
-                restaurantEmail: settings?.email || '',
-                restaurantPhone: settings?.phone || '',
-                restaurantAddress: settings?.address || '',
+                restaurantEmail: settings?.email || APP_CONFIG.email,
+                restaurantPhone: settings?.phone || APP_CONFIG.phone,
+                restaurantAddress: settings?.address || APP_CONFIG.address,
                 bookingNumber: resData.bookingNumber || '',
                 reservationId: resData.id,
                 timezone: settings?.timezone || 'Europe/Lisbon',
@@ -1378,13 +1378,13 @@ export default function AdminReservations() {
           time: formatDisplayTime(res.time, settings),
           guests: res.guests,
           restaurantName: settings?.name || APP_CONFIG.appName,
-          resendApiKey: settings?.resendApiKey,
-          resendFromEmail: settings?.resendFromEmail,
+          resendApiKey: settings?.resendApiKey || (import.meta as any).env?.VITE_RESEND_API_KEY || (import.meta as any).env?.RESEND_API_KEY || '',
+          resendFromEmail: settings?.resendFromEmail || (import.meta as any).env?.VITE_RESEND_FROM_EMAIL || (import.meta as any).env?.RESEND_FROM_EMAIL || '',
           language: res.language || language,
           logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
-          restaurantEmail: settings?.email || '',
-          restaurantPhone: settings?.phone || '',
-          restaurantAddress: settings?.address || '',
+          restaurantEmail: settings?.email || APP_CONFIG.email,
+          restaurantPhone: settings?.phone || APP_CONFIG.phone,
+          restaurantAddress: settings?.address || APP_CONFIG.address,
           bookingNumber: res.bookingNumber || '',
           reservationId: res.id,
           timezone: settings?.timezone || 'Europe/Lisbon',
@@ -1395,14 +1395,17 @@ export default function AdminReservations() {
       const data = await response.json();
       if (data.success) {
         toast.success("Confirmation email sent");
-        const newConf = { sent: true, sentAt: new Date().toISOString(), messageId: data.messageId };
+        const newConf = { sent: true, sentAt: new Date().toISOString(), messageId: data.messageId, failed: false };
         await updateReservation(res.id, { confirmationEmail: newConf } as any);
         if (editingRes?.id === res.id) setEditingRes({ ...editingRes, confirmationEmail: newConf });
       } else {
         toast.error("Failed to send: " + data.error);
+        const newConf = { sent: false, failed: true, error: data.error || 'Failed to send confirmation email', lastAttemptAt: new Date().toISOString() };
+        await updateReservation(res.id, { confirmationEmail: newConf } as any);
+        if (editingRes?.id === res.id) setEditingRes({ ...editingRes, confirmationEmail: newConf });
       }
-    } catch (e) {
-      toast.error("Error sending email");
+    } catch (e: any) {
+      toast.error("Error sending email: " + (e?.message || ''));
     }
   };
 
@@ -1446,13 +1449,13 @@ export default function AdminReservations() {
           time: formatDisplayTime(res.time, settings),
           guests: res.guests,
           restaurantName: settings?.name || APP_CONFIG.appName,
-          resendApiKey: settings?.resendApiKey,
-          resendFromEmail: settings?.resendFromEmail,
+          resendApiKey: settings?.resendApiKey || (import.meta as any).env?.VITE_RESEND_API_KEY || (import.meta as any).env?.RESEND_API_KEY || '',
+          resendFromEmail: settings?.resendFromEmail || (import.meta as any).env?.VITE_RESEND_FROM_EMAIL || (import.meta as any).env?.RESEND_FROM_EMAIL || '',
           language: res.language || language,
           logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
-          restaurantEmail: settings?.email || '',
-          restaurantPhone: settings?.phone || '',
-          restaurantAddress: settings?.address || '',
+          restaurantEmail: settings?.email || APP_CONFIG.email,
+          restaurantPhone: settings?.phone || APP_CONFIG.phone,
+          restaurantAddress: settings?.address || APP_CONFIG.address,
           bookingNumber: res.bookingNumber || '',
           reservationId: res.id,
           timezone: settings?.timezone || 'Europe/Lisbon',
@@ -3256,7 +3259,9 @@ export default function AdminReservations() {
                       <div className="font-medium text-gray-600 mb-1">{language === 'pt' ? 'Email de Confirmação' : 'Confirmation Email'}</div>
                       <div className="flex items-center gap-2">
                         {editingRes.confirmationEmail?.sent ? (
-                          <span className="text-green-600 flex items-center gap-1"><CheckCircle size={14} /> {language === 'pt' ? 'Enviado' : 'Sent'}</span>
+                          <span className="text-green-600 flex items-center gap-1 font-semibold"><CheckCircle size={14} /> {language === 'pt' ? 'Enviado' : 'Sent'}</span>
+                        ) : editingRes.confirmationEmail?.failed ? (
+                          <span className="text-red-600 flex items-center gap-1 font-semibold"><AlertCircle size={14} /> {language === 'pt' ? 'Falhou o Envio' : 'Failed to Send'}</span>
                         ) : (
                           <span className="text-gray-500">{language === 'pt' ? 'Não Enviado' : 'Not Sent'}</span>
                         )}
@@ -3264,12 +3269,17 @@ export default function AdminReservations() {
                           <button 
                             type="button" 
                             onClick={(e) => { e.preventDefault(); handleResendConfirmation(editingRes); }}
-                            className="text-amber-600 hover:underline"
+                            className="text-amber-600 font-bold hover:underline"
                           >
-                            {language === 'pt' ? 'Enviar' : 'Send'}
+                            {editingRes.confirmationEmail?.failed ? (language === 'pt' ? 'Tentar Novamente' : 'Retry') : (language === 'pt' ? 'Enviar' : 'Send')}
                           </button>
                         )}
                       </div>
+                      {editingRes.confirmationEmail?.failed && editingRes.confirmationEmail?.error && (
+                        <div className="text-red-600 text-[11px] mt-1.5 bg-red-50 p-2 rounded-lg border border-red-100 font-medium leading-tight">
+                          {editingRes.confirmationEmail.error}
+                        </div>
+                      )}
                       {editingRes.confirmationEmail?.sentAt && (
                         <div className="text-gray-400 mt-1">{new Date(editingRes.confirmationEmail.sentAt).toLocaleString()}</div>
                       )}

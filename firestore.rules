@@ -69,7 +69,7 @@ service cloud.firestore {
       allow read: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid || resource.data.email == request.auth.token.email));
       allow create: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || request.resource.data.authUid == request.auth.uid || request.resource.data.email == request.auth.token.email));
       allow update: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid || resource.data.email == request.auth.token.email));
-      allow delete: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid));
+      allow delete: if isStaff() || (isAuthenticated() && (request.auth.uid == customerId || resource.data.authUid == request.auth.uid || resource.data.email == request.auth.token.email));
     }
 
     match /users/{userId} {
@@ -89,7 +89,8 @@ service cloud.firestore {
     }
     
     match /smart_alerts/{alertId} {
-      allow read, write: if isStaff();
+      allow read, update, delete: if isStaff();
+      allow create: if true;
     }
   }
 }

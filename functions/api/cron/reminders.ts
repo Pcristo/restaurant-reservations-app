@@ -103,12 +103,12 @@ export async function onRequest(context: any) {
         date: fields.date,
         time: fields.time,
         guests: fields.guests || 2,
-        restaurantName: settings?.name || settings?.restaurantName || 'Nortada',
-        resendApiKey: settings?.resendApiKey,
-        resendFromEmail: settings?.resendFromEmail,
-        restaurantEmail: settings?.email,
-        restaurantPhone: settings?.phone,
-        restaurantAddress: settings?.address,
+        restaurantName: settings?.name || settings?.restaurantName || 'DineMaster Pro',
+        resendApiKey: settings?.resendApiKey || env.VITE_RESEND_API_KEY || env.RESEND_API_KEY || '',
+        resendFromEmail: settings?.resendFromEmail || env.VITE_RESEND_FROM_EMAIL || env.RESEND_FROM_EMAIL || '',
+        restaurantEmail: settings?.email || 'hello@dinemasterpro.com',
+        restaurantPhone: settings?.phone || '+353 1 555 0100',
+        restaurantAddress: settings?.address || '123 Example Street, Dublin, D01 XXXX, Ireland',
         timezone: settings?.timezone || 'Europe/Lisbon',
         logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
         bookingNumber: fields.bookingNumber || id,
@@ -122,9 +122,9 @@ export async function onRequest(context: any) {
         to: fields.customerEmail || '',
         subject,
         html,
-        apiKey: settings?.resendApiKey,
-        fromEmail: settings?.resendFromEmail,
-        restaurantName: settings?.name || 'Nortada'
+        apiKey: settings?.resendApiKey || env.VITE_RESEND_API_KEY || env.RESEND_API_KEY || '',
+        fromEmail: settings?.resendFromEmail || env.VITE_RESEND_FROM_EMAIL || env.RESEND_FROM_EMAIL || '',
+        restaurantName: settings?.name || settings?.restaurantName || 'DineMaster Pro'
       }, env);
 
       if (emailResult.success) {

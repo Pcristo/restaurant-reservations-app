@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { db, auth } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
@@ -29,40 +29,84 @@ export default function CustomerDashboard() {
   const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [filterTab, setFilterTab] = useState<'all' | 'upcoming' | 'cancelled' | 'past'>('all');
   const [pastPage, setPastPage] = useState(1);
   const [selectedUpcomingYear, setSelectedUpcomingYear] = useState<string>('all');
+  const [selectedCancelledYear, setSelectedCancelledYear] = useState<string>('all');
+  const [cancelledPage, setCancelledPage] = useState(1);
   const [selectedPastYear, setSelectedPastYear] = useState<string>('all');
   const itemsPerPage = 20;
   const [showCancelAccountConfirm, setShowCancelAccountConfirm] = useState(false);
   const [isCancellingAccount, setIsCancellingAccount] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   
-  const [profile, setProfile] = useState({ name: '', phone: '', email: '' });
+  const [profile, setProfile] = useState({ 
+    name: user?.name || '', 
+    phone: user?.phone || '', 
+    email: user?.email || '' 
+  });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   useEffect(() => {
     if (!user) return;
 
+    // Initialize with available user context
+    setProfile(prev => ({
+      name: prev.name || user.name || '',
+      phone: prev.phone || user.phone || '',
+      email: prev.email || user.email || ''
+    }));
+
     // Fetch profile
     const fetchProfile = async () => {
       try {
+        let name = user.name || '';
+        let email = user.email || '';
+        let phone = user.phone || '';
+
         const docRef = doc(db, 'customers', user.id);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setProfile({
-            name: data.name || user.name || '',
-            phone: data.phone || '',
-            email: data.email || user.email || ''
-          });
-        } else {
-          setProfile({
-            name: user.name || '',
-            phone: '',
-            email: user.email || ''
-          });
+          if (data.name) name = data.name;
+          if (data.email) email = data.email;
+          if (data.phone) phone = data.phone;
         }
+
+        // If phone is missing, try querying customers by authUid or email
+        if (!phone) {
+          try {
+            if (user.authUid || user.id) {
+              const qCust = query(collection(db, 'customers'), where('authUid', '==', user.authUid || user.id));
+              const snapCust = await getDocs(qCust);
+              if (!snapCust.empty) {
+                const cData = snapCust.docs[0].data();
+                if (cData.phone) phone = cData.phone;
+                if (!name && cData.name) name = cData.name;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // If phone is still missing, try users/{user.id}
+        if (!phone) {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', user.id));
+            if (userSnap.exists()) {
+              const uData = userSnap.data();
+              if (uData.phone) phone = uData.phone;
+              if (uData.name && !name) name = uData.name;
+              if (uData.email && !email) email = uData.email;
+            }
+          } catch (e) {}
+        }
+
+        setProfile({
+          name: name || user.name || '',
+          phone: phone || user.phone || '',
+          email: email || user.email || ''
+        });
       } catch (error) {
         console.error('Error fetching profile:', error);
       }
@@ -70,13 +114,10 @@ export default function CustomerDashboard() {
 
     fetchProfile();
 
-    const q = query(
-      collection(db, 'reservations'),
-      where('customerUid', '==', user.id)
-    );
+    const reservationsMap = new Map<string, Reservation>();
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      let resData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Reservation));
+    const updateAndSetReservations = () => {
+      let resData = Array.from(reservationsMap.values());
       // Filter out reservations marked as deleted by customer
       resData = resData.filter(r => !(r as any).isDeletedByCustomer);
       // Sort by date and time (newest first)
@@ -87,12 +128,43 @@ export default function CustomerDashboard() {
       });
       setReservations(resData);
       setLoading(false);
+    };
+
+    const qUid = query(
+      collection(db, 'reservations'),
+      where('customerUid', '==', user.id)
+    );
+
+    const unsubUid = onSnapshot(qUid, (snapshot) => {
+      snapshot.docs.forEach(d => {
+        reservationsMap.set(d.id, { id: d.id, ...d.data() } as Reservation);
+      });
+      updateAndSetReservations();
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'reservations (customer filter)');
+      handleFirestoreError(error, OperationType.LIST, 'reservations (customer uid filter)');
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    let unsubEmail = () => {};
+    if (user.email) {
+      const qEmail = query(
+        collection(db, 'reservations'),
+        where('customerEmail', '==', user.email)
+      );
+      unsubEmail = onSnapshot(qEmail, (snapshot) => {
+        snapshot.docs.forEach(d => {
+          reservationsMap.set(d.id, { id: d.id, ...d.data() } as Reservation);
+        });
+        updateAndSetReservations();
+      }, (error) => {
+        console.warn('Error querying customer reservations by email:', error);
+      });
+    }
+
+    return () => {
+      unsubUid();
+      unsubEmail();
+    };
   }, [user]);
 
   const handleDeleteAllPast = async () => {
@@ -179,6 +251,24 @@ export default function CustomerDashboard() {
 
     setIsSavingProfile(true);
     try {
+      // Check email uniqueness before saving
+      if (profile.email && profile.email.trim() !== '' && profile.email.toLowerCase() !== user.email?.toLowerCase()) {
+        const emailLower = profile.email.trim().toLowerCase();
+        const qCust = query(collection(db, 'customers'), where('email', '==', emailLower));
+        const snapCust = await getDocs(qCust);
+        
+        let isDuplicate = false;
+        snapCust.docs.forEach(docSnap => {
+          if (docSnap.id !== user.id) isDuplicate = true;
+        });
+
+        if (isDuplicate) {
+          toast.error(language === 'pt' ? 'Já existe um cliente com este e-mail.' : 'A customer with this email already exists.');
+          setIsSavingProfile(false);
+          return;
+        }
+      }
+
       if (password) {
         try {
           await updatePassword(password);
@@ -193,8 +283,28 @@ export default function CustomerDashboard() {
         }
       }
 
-      // Use setDoc with merge: true to handle cases where the document might not exist yet
-      await setDoc(doc(db, 'customers', user.id), { ...profile, id: user.id }, { merge: true });
+      // Use setDoc with merge: true to save profile in customers
+      await setDoc(doc(db, 'customers', user.id), { 
+        ...profile, 
+        id: user.id, 
+        authUid: user.authUid || user.id,
+        isRegistered: true 
+      }, { merge: true });
+
+      // Mirror in users collection
+      try {
+        await setDoc(doc(db, 'users', user.id), { 
+          id: user.id,
+          authUid: user.authUid || user.id,
+          name: profile.name,
+          email: profile.email,
+          phone: profile.phone,
+          role: 'customer',
+          status: 'active'
+        }, { merge: true });
+      } catch (userErr) {
+        console.warn('Could not mirror profile in users collection:', userErr);
+      }
       
       setIsEditingProfile(false);
       toast.success(t('profile.save_success'));
@@ -270,20 +380,35 @@ export default function CustomerDashboard() {
   }
 
   const upcomingRaw = reservations.filter(r => r.status !== 'cancelled' && r.status !== 'completed' && isAfter(parseISO(`${r.date}T${r.time}`), new Date()));
+  const cancelledRaw = reservations.filter(r => r.status === 'cancelled');
+  const completedRaw = reservations.filter(r => r.status === 'completed' || (r.status !== 'cancelled' && !isAfter(parseISO(`${r.date}T${r.time}`), new Date())));
   const pastRaw = reservations.filter(r => r.status === 'cancelled' || r.status === 'completed' || !isAfter(parseISO(`${r.date}T${r.time}`), new Date()));
   
   const upcomingYears = Array.from(new Set(upcomingRaw.map(r => r.date.substring(0, 4)))).sort((a, b) => b.localeCompare(a));
+  const cancelledYears = Array.from(new Set(cancelledRaw.map(r => r.date.substring(0, 4)))).sort((a, b) => b.localeCompare(a));
   const pastYears = Array.from(new Set(pastRaw.map(r => r.date.substring(0, 4)))).sort((a, b) => b.localeCompare(a));
   
   const upcoming = selectedUpcomingYear === 'all' ? upcomingRaw : upcomingRaw.filter(r => r.date.startsWith(selectedUpcomingYear));
+  const cancelled = selectedCancelledYear === 'all' ? cancelledRaw : cancelledRaw.filter(r => r.date.startsWith(selectedCancelledYear));
   const past = selectedPastYear === 'all' ? pastRaw : pastRaw.filter(r => r.date.startsWith(selectedPastYear));
+  const completed = selectedPastYear === 'all' ? completedRaw : completedRaw.filter(r => r.date.startsWith(selectedPastYear));
 
   return (
     <div className="max-w-5xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-      <div className="mb-12">
-        <p className="text-amber-600 font-bold mb-1">{t('dashboard.welcome_back')} {profile.name || user?.name}</p>
-        <h1 className="text-4xl font-black text-gray-900 mb-2">{t('nav.my_bookings')}</h1>
-        <p className="text-gray-500 text-lg">{t('dashboard.manage_bookings_desc')}</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-12">
+        <div>
+          <p className="text-amber-600 font-bold mb-1">{t('dashboard.welcome_back')} {profile.name || user?.name}</p>
+          <h1 className="text-4xl font-black text-gray-900 mb-2">{t('nav.my_bookings')}</h1>
+          <p className="text-gray-500 text-lg">{t('dashboard.manage_bookings_desc')}</p>
+        </div>
+        <Link
+          to="/?scrollTo=booking"
+          className="inline-flex items-center justify-center gap-2 bg-amber-600 text-white px-6 py-3.5 rounded-2xl font-bold hover:bg-amber-700 transition-all shadow-lg shadow-amber-200 text-base shrink-0 self-start sm:self-auto cursor-pointer"
+        >
+          <Calendar size={18} />
+          {t('res.book_table')}
+          <ChevronRight size={18} />
+        </Link>
       </div>
 
       {/* Profile Section */}
@@ -441,13 +566,21 @@ export default function CustomerDashboard() {
                 <p className="font-bold text-gray-900">{profile.phone || '—'}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl">
-              <div className="w-12 h-12 bg-white shadow-sm text-amber-600 rounded-xl flex items-center justify-center">
-                <Mail size={24} />
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">{t('common.email')}</p>
-                <p className="font-bold text-gray-900 truncate max-w-[150px]">{profile.email || '—'}</p>
+            <div className="relative">
+              {user?.authProvider === 'google' && (
+                <div className="absolute -top-3 right-4 bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 border border-blue-100 shadow-sm z-10">
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/><path d="M1 1h22v22H1z" fill="none"/></svg>
+                  {language === 'pt' ? 'Registado com Google' : 'Registered with Google'}
+                </div>
+              )}
+              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-2xl h-full">
+                <div className="w-12 h-12 bg-white shadow-sm text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+                  <Mail size={24} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">{t('common.email')}</p>
+                  <p className="font-bold text-gray-900 truncate">{profile.email || '—'}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -463,27 +596,75 @@ export default function CustomerDashboard() {
           <p className="text-gray-500 mb-8">{t('res.no_bookings_yet')}</p>
           <Link 
             to="/?scrollTo=booking" 
-            className="inline-flex items-center gap-2 bg-amber-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-amber-700 transition-all shadow-lg shadow-amber-200"
+            className="inline-flex items-center gap-2 bg-amber-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-amber-700 transition-all shadow-lg shadow-amber-200 cursor-pointer"
           >
             {t('res.book_table')}
             <ChevronRight size={20} />
           </Link>
         </div>
       ) : (
-        <div className="space-y-12">
+        <div className="space-y-8">
+          {/* Filter Tabs Bar */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+            <button
+              onClick={() => { setFilterTab('all'); setPastPage(1); setCancelledPage(1); }}
+              className={cn(
+                "px-4 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer",
+                filterTab === 'all'
+                  ? "bg-gray-900 text-white shadow-md shadow-gray-900/10"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              {language === 'pt' ? 'Todas' : 'All'} ({reservations.length})
+            </button>
+            <button
+              onClick={() => { setFilterTab('upcoming'); setPastPage(1); setCancelledPage(1); }}
+              className={cn(
+                "px-4 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer",
+                filterTab === 'upcoming'
+                  ? "bg-amber-600 text-white shadow-md shadow-amber-600/20"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              {language === 'pt' ? 'Próximas' : 'Upcoming'} ({upcomingRaw.length})
+            </button>
+            <button
+              onClick={() => { setFilterTab('cancelled'); setPastPage(1); setCancelledPage(1); }}
+              className={cn(
+                "px-4 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer",
+                filterTab === 'cancelled'
+                  ? "bg-red-600 text-white shadow-md shadow-red-600/20"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              {language === 'pt' ? 'Canceladas' : 'Cancelled'} ({cancelledRaw.length})
+            </button>
+            <button
+              onClick={() => { setFilterTab('past'); setPastPage(1); setCancelledPage(1); }}
+              className={cn(
+                "px-4 py-2.5 rounded-2xl text-sm font-bold transition-all whitespace-nowrap cursor-pointer",
+                filterTab === 'past'
+                  ? "bg-gray-700 text-white shadow-md shadow-gray-700/10"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              )}
+            >
+              {language === 'pt' ? 'Concluídas / Passadas' : 'Completed / Past'} ({completedRaw.length})
+            </button>
+          </div>
+
           {/* Upcoming Section */}
-          {upcomingRaw.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-6">
+          {(filterTab === 'all' || filterTab === 'upcoming') && upcomingRaw.length > 0 && (
+            <section className="space-y-6">
+              <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                   <div className="w-2 h-8 bg-amber-500 rounded-full" />
-                  {t('dashboard.upcoming')}
+                  {t('dashboard.upcoming')} ({upcoming.length})
                 </h2>
                 {upcomingYears.length > 0 && (
                   <select
                     value={selectedUpcomingYear}
                     onChange={(e) => setSelectedUpcomingYear(e.target.value)}
-                    className="ml-4 px-3 py-1.5 text-sm font-semibold rounded-lg bg-gray-100 border border-gray-200 text-gray-700 outline-none focus:ring-2 focus:ring-amber-500"
+                    className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-gray-100 border border-gray-200 text-gray-700 outline-none focus:ring-2 focus:ring-amber-500"
                   >
                     <option value="all">{language === 'pt' ? 'Todos os Anos' : 'All Years'}</option>
                     {upcomingYears.map(y => <option key={y} value={y}>{y}</option>)}
@@ -534,7 +715,7 @@ export default function CustomerDashboard() {
                         {res.status !== 'cancelled' && (
                           <button
                             onClick={() => setShowCancelConfirm(res.id)}
-                            className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-2xl transition-colors"
+                            className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-2xl transition-colors cursor-pointer"
                           >
                             <XCircle size={18} />
                             {t('res.cancel')}
@@ -545,17 +726,102 @@ export default function CustomerDashboard() {
                   </div>
                 ))}
               </div>
-
             </section>
           )}
 
-          {/* Past Section */}
-          {pastRaw.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-6">
+          {/* If upcoming filter selected but 0 upcoming */}
+          {filterTab === 'upcoming' && upcomingRaw.length === 0 && (
+            <div className="bg-white rounded-3xl p-8 text-center border border-gray-100 shadow-sm">
+              <Calendar size={32} className="mx-auto text-gray-400 mb-3" />
+              <p className="text-gray-600 font-bold mb-4">{language === 'pt' ? 'Não existem reservas futuras ativas.' : 'No upcoming bookings found.'}</p>
+              <Link 
+                to="/?scrollTo=booking" 
+                className="inline-flex items-center gap-2 bg-amber-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-amber-700 transition-all text-sm"
+              >
+                {t('res.book_table')}
+                <ChevronRight size={16} />
+              </Link>
+            </div>
+          )}
+
+          {/* Cancelled Section */}
+          {(filterTab === 'all' || filterTab === 'cancelled') && cancelledRaw.length > 0 && (
+            <section className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <div className="w-2 h-8 bg-red-500 rounded-full" />
+                  {language === 'pt' ? 'Reservas Canceladas' : 'Cancelled Bookings'} ({cancelled.length})
+                </h2>
+                {cancelledYears.length > 0 && (
+                  <select
+                    value={selectedCancelledYear}
+                    onChange={(e) => setSelectedCancelledYear(e.target.value)}
+                    className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-gray-100 border border-gray-200 text-gray-700 outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    <option value="all">{language === 'pt' ? 'Todos os Anos' : 'All Years'}</option>
+                    {cancelledYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                {cancelled.map((res) => (
+                  <div key={res.id} className="bg-red-50/30 rounded-2xl p-5 border border-red-100 flex items-center justify-between group hover:bg-red-50/50 transition-colors">
+                    <div className="flex items-center gap-6">
+                      <div className="text-center min-w-[80px] bg-white rounded-xl py-2 px-3 border border-red-100">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">{format(parseISO(res.date), 'yyyy')}</p>
+                        <p className="text-xs font-bold text-red-600 uppercase">{format(parseISO(res.date), 'MMM')}</p>
+                        <p className="text-2xl font-black text-gray-900">{format(parseISO(res.date), 'dd')}</p>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          {getStatusBadge('cancelled')}
+                          {res.bookingNumber && settings?.enableBookingNumber !== false && (
+                            <span className="px-2 py-0.5 bg-white text-gray-700 text-[10px] font-mono font-bold uppercase rounded-md border border-red-100">
+                              {res.bookingNumber}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-gray-700 font-medium">
+                          <span className="flex items-center gap-1 font-bold text-gray-900">
+                            <Clock size={15} className="text-gray-400" />
+                            {formatDisplayTime(res.time, settings)}
+                          </span>
+                          <span className="text-gray-300">•</span>
+                          <span className="flex items-center gap-1">
+                            <Users size={15} className="text-gray-400" />
+                            {res.guests} {t('common.guests')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowDeleteConfirm(res.id)}
+                      className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-100/50 rounded-xl transition-all cursor-pointer opacity-0 group-hover:opacity-100"
+                      title={t('res.delete_forever')}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* If cancelled filter selected but 0 cancelled */}
+          {filterTab === 'cancelled' && cancelledRaw.length === 0 && (
+            <div className="bg-white rounded-3xl p-8 text-center border border-gray-100 shadow-sm">
+              <CheckCircle size={32} className="mx-auto text-emerald-500 mb-3" />
+              <p className="text-gray-600 font-bold">{language === 'pt' ? 'Não existem reservas canceladas.' : 'No cancelled bookings.'}</p>
+            </div>
+          )}
+
+          {/* Past / Completed Section */}
+          {(filterTab === 'all' || filterTab === 'past') && (filterTab === 'past' ? completedRaw.length > 0 : completedRaw.length > 0) && (
+            <section className="space-y-6">
+              <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                   <div className="w-2 h-8 bg-gray-300 rounded-full" />
-                  {t('dashboard.past_cancelled')}
+                  {language === 'pt' ? 'Reservas Concluídas / Histórico' : 'Completed / Past Bookings'} ({completed.length})
                 </h2>
                 <div className="flex items-center gap-3">
                   {pastYears.length > 0 && (
@@ -571,86 +837,96 @@ export default function CustomerDashboard() {
                       {pastYears.map(y => <option key={y} value={y}>{y}</option>)}
                     </select>
                   )}
-                <button
-                  onClick={() => setShowDeleteAllConfirm(true)}
-                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors flex items-center gap-1.5 border border-gray-200 hover:border-red-200"
-                  title={language === 'pt' ? 'Limpar Histórico' : 'Clear History'}
-                >
-                  <Trash2 size={14} />
-                  {language === 'pt' ? 'Limpar Tudo' : 'Clear All'}
-                </button>
-              </div>
-              </div>
-              <AnimatePresence mode="wait">
-                  <motion.div
-                    key={pastPage}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
-                    className="grid grid-cols-1 gap-4 opacity-70"
-                  >
-                {past.slice((pastPage - 1) * itemsPerPage, pastPage * itemsPerPage).map((res) => (
-                  <div key={res.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between group">
-                    <div className="flex items-center gap-6">
-                      <div className="text-center min-w-[80px]">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{format(parseISO(res.date), 'yyyy')}</p>
-                        <p className="text-xs font-bold text-gray-400 uppercase">{format(parseISO(res.date), 'MMM')}</p>
-                        <p className="text-2xl font-black text-gray-900">{format(parseISO(res.date), 'dd')}</p>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          {res.bookingNumber && settings?.enableBookingNumber !== false && (
-                            <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-[9.5px] font-mono font-bold uppercase rounded-md border border-gray-200">
-                              {res.bookingNumber}
-                            </span>
-                          )}
-                          <p className="font-bold text-gray-900">{formatDisplayTime(res.time, settings)}</p>
-                          <span className="text-gray-300">•</span>
-                          <p className="text-sm text-gray-500">{res.guests} {t('common.guests')}</p>
-                        </div>
-                        {getStatusBadge(res.status)}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowDeleteConfirm(res.id)}
-                      className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                      title={t('res.delete_forever')}
-                    >
-                      <Trash2 size={20} />
-                    </button>
-                  </div>
-                ))}
-              </motion.div>
-              </AnimatePresence>
-              <div className="flex items-center justify-between mt-6 px-4">
-                <p className="text-sm text-gray-500 font-medium">
-                  {language === 'pt' ? 'Página' : 'Page'} {pastPage} {language === 'pt' ? 'de' : 'of'} {Math.max(1, Math.ceil(past.length / itemsPerPage))}
-                </p>
-                <div className="flex items-center gap-2">
                   <button
-                    onClick={() => {
-                      setPastPage(p => Math.max(1, p - 1));
-                      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 250);
-                    }}
-                    disabled={pastPage === 1}
-                    className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    onClick={() => setShowDeleteAllConfirm(true)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors flex items-center gap-1.5 border border-gray-200 hover:border-red-200 cursor-pointer"
+                    title={language === 'pt' ? 'Limpar Histórico' : 'Clear History'}
                   >
-                    <ChevronLeft size={20} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      setPastPage(p => Math.min(Math.ceil(past.length / itemsPerPage), p + 1));
-                      setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 250);
-                    }}
-                    disabled={pastPage >= Math.ceil(past.length / itemsPerPage)}
-                    className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight size={20} />
+                    <Trash2 size={14} />
+                    {language === 'pt' ? 'Limpar Tudo' : 'Clear All'}
                   </button>
                 </div>
               </div>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={pastPage}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="grid grid-cols-1 gap-4 opacity-75"
+                >
+                  {completed.slice((pastPage - 1) * itemsPerPage, pastPage * itemsPerPage).map((res) => (
+                    <div key={res.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between group">
+                      <div className="flex items-center gap-6">
+                        <div className="text-center min-w-[80px]">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{format(parseISO(res.date), 'yyyy')}</p>
+                          <p className="text-xs font-bold text-gray-400 uppercase">{format(parseISO(res.date), 'MMM')}</p>
+                          <p className="text-2xl font-black text-gray-900">{format(parseISO(res.date), 'dd')}</p>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            {res.bookingNumber && settings?.enableBookingNumber !== false && (
+                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-[9.5px] font-mono font-bold uppercase rounded-md border border-gray-200">
+                                {res.bookingNumber}
+                              </span>
+                            )}
+                            <p className="font-bold text-gray-900">{formatDisplayTime(res.time, settings)}</p>
+                            <span className="text-gray-300">•</span>
+                            <p className="text-sm text-gray-500">{res.guests} {t('common.guests')}</p>
+                          </div>
+                          {getStatusBadge(res.status)}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowDeleteConfirm(res.id)}
+                        className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                        title={t('res.delete_forever')}
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </div>
+                  ))}
+                </motion.div>
+              </AnimatePresence>
+              {completed.length > itemsPerPage && (
+                <div className="flex items-center justify-between mt-6 px-4">
+                  <p className="text-sm text-gray-500 font-medium">
+                    {language === 'pt' ? 'Página' : 'Page'} {pastPage} {language === 'pt' ? 'de' : 'of'} {Math.max(1, Math.ceil(completed.length / itemsPerPage))}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        setPastPage(p => Math.max(1, p - 1));
+                        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 250);
+                      }}
+                      disabled={pastPage === 1}
+                      className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronLeft size={20} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPastPage(p => Math.min(Math.ceil(completed.length / itemsPerPage), p + 1));
+                        setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 250);
+                      }}
+                      disabled={pastPage >= Math.ceil(completed.length / itemsPerPage)}
+                      className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <ChevronRight size={20} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
+          )}
+
+          {/* If past filter selected but 0 past */}
+          {filterTab === 'past' && completedRaw.length === 0 && (
+            <div className="bg-white rounded-3xl p-8 text-center border border-gray-100 shadow-sm">
+              <Calendar size={32} className="mx-auto text-gray-400 mb-3" />
+              <p className="text-gray-600 font-bold">{language === 'pt' ? 'Não existem reservas passadas.' : 'No past bookings found.'}</p>
+            </div>
           )}
         </div>
       )}

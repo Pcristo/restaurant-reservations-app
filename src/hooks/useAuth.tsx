@@ -64,41 +64,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const syncExistingCustomerDetails = async (uid: string, email: string, defaultName: string) => {
     try {
-      if (!email) return;
-      const emailLower = email.trim().toLowerCase();
+      if (!email && !uid) return null;
+      const emailLower = (email || '').trim().toLowerCase();
       const customersRef = collection(db, 'customers');
       let existingData: any = {};
-      let docsToDelete: string[] = [];
+      const docsToDelete = new Set<string>();
 
-      try {
-        const q = query(customersRef, where('email', '==', emailLower));
-        const querySnapshot = await getDocs(q);
-
-        querySnapshot.forEach((docSnap) => {
-          if (docSnap.id !== uid) {
+      // 1. Search by email to find ALL existing manual or duplicate records
+      if (emailLower) {
+        try {
+          const qLower = query(customersRef, where('email', '==', emailLower));
+          const snapLower = await getDocs(qLower);
+          const qExact = query(customersRef, where('email', '==', email));
+          const snapExact = await getDocs(qExact);
+          
+          const allDocs = [...snapLower.docs, ...snapExact.docs];
+          const uniqueDocs = Array.from(new Map(allDocs.map(doc => [doc.id, doc])).values());
+          
+          uniqueDocs.forEach(docSnap => {
             const data = docSnap.data();
-            existingData = {
-              name: data.name || existingData.name || defaultName,
-              phone: data.phone || existingData.phone || '',
-              notes: data.notes || existingData.notes || '',
-              isRegular: data.isRegular !== undefined ? data.isRegular : (existingData.isRegular || false),
-              favoriteTables: data.favoriteTables || existingData.favoriteTables || [],
-            };
-            docsToDelete.push(docSnap.id);
-          }
-        });
-      } catch (readErr) {
-        console.warn('Could not read existing customer records (expected for non-admin during signup):', readErr);
+            if (data.name && !existingData.name) existingData.name = data.name;
+            if (data.phone && !existingData.phone) existingData.phone = data.phone;
+            if (data.notes && !existingData.notes) existingData.notes = data.notes;
+            if (data.isRegular !== undefined) existingData.isRegular = data.isRegular;
+            if (data.favoriteTables?.length) existingData.favoriteTables = data.favoriteTables;
+            
+            if (docSnap.id !== uid) {
+              docsToDelete.add(docSnap.id);
+            }
+          });
+        } catch (e) {
+          console.warn('Could not read existing customer records by email:', e);
+        }
       }
 
-      // Create / Merge user customer record at their UID
-      const baseName = (existingData.name || defaultName).split(' ')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-      const newId = 'reg_' + (baseName || 'user') + '_' + Math.random().toString(36).substring(2,6);
+      // 2. Search by authUid == uid (if they have an old record pointing to this authUid)
+      try {
+        const qAuth = query(customersRef, where('authUid', '==', uid));
+        const snapAuth = await getDocs(qAuth);
+        snapAuth.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          if (data.name && !existingData.name) existingData.name = data.name;
+          if (data.phone && !existingData.phone) existingData.phone = data.phone;
+          if (docSnap.id !== uid) docsToDelete.add(docSnap.id);
+        });
+      } catch (e) {}
+
+      // 3. Check direct doc (uid)
+      try {
+        const directDoc = await getDoc(doc(db, 'customers', uid));
+        if (directDoc.exists()) {
+          const data = directDoc.data();
+          if (data.name && !existingData.name) existingData.name = data.name;
+          if (data.phone && !existingData.phone) existingData.phone = data.phone;
+        }
+      } catch (e) {}
+
+      // 4. If still missing phone or name, check users/{uid} collection
+      try {
+        const userDocSnap = await getDoc(doc(db, 'users', uid));
+        if (userDocSnap.exists()) {
+          const uData = userDocSnap.data();
+          if (uData.phone && !existingData.phone) existingData.phone = uData.phone;
+          if (uData.name && !existingData.name) existingData.name = uData.name;
+        }
+      } catch (e) {}
 
       const finalCustomerData = { 
-        id: newId,
+        id: uid,
         authUid: uid,
-        name: existingData.name || defaultName,
+        name: existingData.name || defaultName || 'Customer',
         email: email,
         phone: existingData.phone || '',
         notes: existingData.notes || '',
@@ -107,45 +142,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isRegistered: true
       };
 
-      await setDoc(doc(db, 'customers', newId), finalCustomerData, { merge: true });
-
-      // Delete duplicate customer entries that don't match the new UID
-      for (const oldId of docsToDelete) {
+      // 5. Delete duplicate documents to enforce email uniqueness
+      for (const docId of docsToDelete) {
         try {
-          await deleteDoc(doc(db, 'customers', oldId));
+          await deleteDoc(doc(db, 'customers', docId));
         } catch (delErr) {
-          console.error('Error deleting duplicate customer record:', delErr);
+          console.warn(`Could not delete duplicate customer doc ${docId}:`, delErr);
         }
       }
 
-      // Now, update all existing reservations under this email to have the new customerUid
-      const resRef = collection(db, 'reservations');
-      const resQuery = query(resRef, where('customerEmail', '==', email));
-      const resSnapshot = await getDocs(resQuery);
+      // Always save canonical customer record
+      await setDoc(doc(db, 'customers', uid), finalCustomerData, { merge: true });
 
-      for (const resDoc of resSnapshot.docs) {
+      // Mirror customer user record in users/{uid}
+      await setDoc(doc(db, 'users', uid), {
+        id: uid,
+        authUid: uid,
+        email: finalCustomerData.email,
+        name: finalCustomerData.name,
+        phone: finalCustomerData.phone,
+        role: 'customer',
+        status: 'active'
+      }, { merge: true });
+
+      // Link reservations with this email to customerUid
+      if (email) {
         try {
-          await setDoc(doc(db, 'reservations', resDoc.id), { customerUid: newId }, { merge: true });
-        } catch (updErr) {
-          console.error('Error updating reservation customerUid:', updErr);
+          const resRef = collection(db, 'reservations');
+          const resQuery = query(resRef, where('customerEmail', '==', email));
+          const resSnapshot = await getDocs(resQuery);
+          for (const resDoc of resSnapshot.docs) {
+            const rData = resDoc.data();
+            if (!rData.customerUid || rData.customerUid !== uid) {
+              await setDoc(doc(db, 'reservations', resDoc.id), { customerUid: uid }, { merge: true });
+            }
+          }
+        } catch (resErr) {
+          console.warn('Error linking reservations to customerUid:', resErr);
         }
       }
 
-      // Also try with lowercase or trimmed email fallback for reservations
-      const allResQuery = query(resRef);
-      const allResSnapshot = await getDocs(allResQuery);
-      for (const resDoc of allResSnapshot.docs) {
-        const resData = resDoc.data();
-        if (resData.customerEmail?.trim().toLowerCase() === emailLower && resData.customerUid !== newId) {
-          try {
-            await setDoc(doc(db, 'reservations', resDoc.id), { customerUid: newId }, { merge: true });
-          } catch (updErr) {
-            console.error('Error updating reservation customerUid fallback:', updErr);
-          }
-        }
-      }
+      return finalCustomerData;
     } catch (err) {
       console.error('Error syncing existing customer details:', err);
+      return null;
     }
   };
 
@@ -178,6 +218,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userEmail = (firebaseUser.email || '').trim().toLowerCase();
           const isAdminEmail = userEmail === "pcristo35@gmail.com";
           const intendedRole = (localStorage.getItem('intendedRole') as UserRole) || 'customer';
+          
+          const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
+          const isGoogleProvider = firebaseUser.providerData.some(p => p.providerId === 'google.com');
+          const currentAuthProvider = isGoogleProvider ? 'google' : 'email';
 
           // 1. MASTER ADMIN BYPASS (pcristo35@gmail.com)
           if (isAdminEmail) {
@@ -187,7 +231,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               email: firebaseUser.email || 'pcristo35@gmail.com',
               name: firebaseUser.displayName || 'Admin',
               role: 'admin',
-              status: 'active'
+              status: 'active',
+              authProvider: currentAuthProvider
             };
 
             updateUserWithCache(adminUser);
@@ -201,7 +246,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 id: firebaseUser.uid,
                 authUid: firebaseUser.uid,
                 role: 'admin',
-                status: 'active'
+                status: 'active',
+                authProvider: currentAuthProvider
               }, { merge: true });
             } catch (e) {
               console.warn('Admin user doc sync note:', e);
@@ -210,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
               if (snap.exists()) {
                 const liveData = snap.data();
-                updateUserWithCache({ id: snap.id, ...liveData, role: 'admin' } as User);
+                updateUserWithCache({ id: snap.id, ...liveData, role: 'admin', authProvider: currentAuthProvider } as User);
               }
             }, (err) => {
               console.warn('Admin profile listener warning:', err);
@@ -270,7 +316,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               email: userData.email || firebaseUser.email || '',
               name: userData.name || firebaseUser.displayName || 'Staff Member',
               role: userData.role || 'staff',
-              status: userData.status || 'active'
+              status: userData.status || 'active',
+              authProvider: currentAuthProvider
             };
 
             // Ensure document at users/{uid} is synced
@@ -279,7 +326,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 await setDoc(doc(db, 'users', firebaseUser.uid), {
                   ...staffUser,
                   id: firebaseUser.uid,
-                  authUid: firebaseUser.uid
+                  authUid: firebaseUser.uid,
+                  authProvider: currentAuthProvider
                 }, { merge: true });
               } catch (e) {
                 console.warn('Could not sync staff uid document:', e);
@@ -292,7 +340,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
               if (snap.exists()) {
-                updateUserWithCache({ id: snap.id, ...snap.data() } as User);
+                updateUserWithCache({ id: snap.id, ...snap.data(), authProvider: currentAuthProvider } as User);
               }
             }, (err) => {
               console.warn('Staff profile listener warning:', err);
@@ -315,7 +363,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           // 4. CUSTOMER AUTHENTICATION (Google or Email)
-          const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
           if (isEmailProvider && !firebaseUser.emailVerified) {
             const justSignedUp = localStorage.getItem('justSignedUp') === 'true';
             await signOut(auth);
@@ -330,79 +377,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
 
-          // Check if customer already exists in `customers`
-          let customerDocSnap: any = null;
-          try {
-            const qCustAuth = query(collection(db, 'customers'), where('authUid', '==', firebaseUser.uid));
-            const snapCustAuth = await getDocs(qCustAuth);
-            if (!snapCustAuth.empty) {
-              customerDocSnap = snapCustAuth.docs[0];
-            }
-          } catch (e) {}
+          // Sync / fetch customer profile
+          const syncedData = await syncExistingCustomerDetails(
+            firebaseUser.uid, 
+            firebaseUser.email || userEmail, 
+            firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Customer'
+          );
 
-          if (!customerDocSnap && userEmail) {
-            try {
-              const qCustEmail = query(collection(db, 'customers'), where('email', '==', userEmail));
-              const snapCustEmail = await getDocs(qCustEmail);
-              if (!snapCustEmail.empty) {
-                customerDocSnap = snapCustEmail.docs[0];
-              } else {
-                const qCustEmailRaw = query(collection(db, 'customers'), where('email', '==', firebaseUser.email));
-                const snapCustEmailRaw = await getDocs(qCustEmailRaw);
-                if (!snapCustEmailRaw.empty) {
-                  customerDocSnap = snapCustEmailRaw.docs[0];
-                }
-              }
-            } catch (e) {}
-          }
-
-          if (customerDocSnap && customerDocSnap.exists()) {
-            const custData = customerDocSnap.data();
-            if (custData.status === 'inactive') {
-              await signOut(auth);
-              updateUserWithCache(null);
-              toast.error(t('common.account_suspended') || 'Account suspended');
-              setLoading(false);
-              return;
-            }
-
-            const currentCustomer: User = {
-              id: customerDocSnap.id,
-              authUid: firebaseUser.uid,
-              email: custData.email || firebaseUser.email || '',
-              name: custData.name || firebaseUser.displayName || 'Customer',
-              role: 'customer',
-              status: custData.status || 'active'
-            };
-
-            updateUserWithCache(currentCustomer);
-            localStorage.removeItem('intendedRole');
-            setLoading(false);
-
-            // Sync any existing details and reservations in background
-            syncExistingCustomerDetails(firebaseUser.uid, currentCustomer.email, currentCustomer.name);
-            return;
-          }
-
-          // Auto-create customer record for new Google Customer
-          const newCustomerUser: User = {
+          const customerUser: User = {
             id: firebaseUser.uid,
             authUid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Customer',
+            email: syncedData?.email || firebaseUser.email || '',
+            name: syncedData?.name || firebaseUser.displayName || 'Customer',
+            phone: syncedData?.phone || '',
             role: 'customer',
-            status: 'active'
+            status: 'active',
+            authProvider: isGoogleProvider ? 'google' : 'email'
           };
 
-          updateUserWithCache(newCustomerUser);
+          updateUserWithCache(customerUser);
           localStorage.removeItem('intendedRole');
           setLoading(false);
 
-          try {
-            await syncExistingCustomerDetails(firebaseUser.uid, newCustomerUser.email, newCustomerUser.name);
-          } catch (syncErr) {
-            console.warn('Customer initial sync notice:', syncErr);
-          }
+          // Realtime listener for customer profile changes
+          unsubscribeProfile = onSnapshot(doc(db, 'customers', firebaseUser.uid), (snap) => {
+            if (snap.exists()) {
+              const liveData = snap.data();
+              updateUserWithCache({
+                id: firebaseUser.uid,
+                authUid: firebaseUser.uid,
+                email: liveData.email || firebaseUser.email || '',
+                name: liveData.name || firebaseUser.displayName || 'Customer',
+                phone: liveData.phone || '',
+                role: 'customer',
+                status: liveData.status || 'active',
+                authProvider: isGoogleProvider ? 'google' : 'email'
+              });
+            }
+          }, (err) => {
+            console.warn('Customer profile listener warning:', err);
+          });
         } else {
           // Firebase user is null
           updateUserWithCache(null);
@@ -419,7 +433,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
     };
-  }, [t, language]);
+  }, []);
 
   const signIn = async (role: UserRole = 'customer', isSignup: boolean = false) => {
     try {
