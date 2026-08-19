@@ -15,10 +15,23 @@ const generateFriendlyId = (text: string) => {
 };
 
 export function useTables() {
-
-  const [tables, setTables] = useState<Table[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tables, setTables] = useState<Table[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_tables');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [areas, setAreas] = useState<Area[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_areas');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     let tablesLoaded = false;
@@ -27,6 +40,9 @@ export function useTables() {
     const unsubscribeTables = onSnapshot(collection(db, 'tables'), (snapshot) => {
       const tablesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Table));
       setTables(tablesData);
+      try {
+        localStorage.setItem('cached_tables', JSON.stringify(tablesData));
+      } catch (e) {}
       tablesLoaded = true;
       if (areasLoaded) setLoading(false);
     }, (error) => {
@@ -38,11 +54,14 @@ export function useTables() {
       const areasData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Area));
       areasData.sort((a, b) => (a.order || 0) - (b.order || 0));
       setAreas(areasData);
+      try {
+        localStorage.setItem('cached_areas', JSON.stringify(areasData));
+      } catch (e) {}
       areasLoaded = true;
       if (tablesLoaded) setLoading(false);
     }, (error) => {
       // If the areas collection doesn't exist yet, we can gracefully default it to empty list
-      setAreas([]);
+      setAreas((prev) => prev || []);
       areasLoaded = true;
       if (tablesLoaded) setLoading(false);
     });

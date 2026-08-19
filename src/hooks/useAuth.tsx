@@ -2,6 +2,8 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider, 
   signOut, 
   User as FirebaseUser,
@@ -34,10 +36,27 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const cached = localStorage.getItem('cached_user_profile');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState(true);
-  const isCreatingUser = React.useRef(false);
   const { t, language } = useLanguage();
+
+  const updateUserWithCache = (newUser: User | null) => {
+    setUser(newUser);
+    try {
+      if (newUser) {
+        localStorage.setItem('cached_user_profile', JSON.stringify(newUser));
+      } else {
+        localStorage.removeItem('cached_user_profile');
+      }
+    } catch (e) {}
+  };
 
   const syncExistingCustomerDetails = async (uid: string, email: string, defaultName: string) => {
     try {
@@ -127,6 +146,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Check for redirect result from Google Sign-In if applicable
+    getRedirectResult(auth)
+      .then((res) => {
+        if (res?.user) {
+          console.log('Redirect sign-in completed for:', res.user.email);
+        }
+      })
+      .catch((err) => {
+        if (err?.code !== 'auth/credential-already-in-use') {
+          console.warn('Redirect sign-in check notice:', err);
+        }
+      });
+
     let unsubscribeProfile: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -137,237 +169,251 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         if (firebaseUser) {
-          const userQ = query(collection(db, 'users'), where('authUid', '==', firebaseUser.uid));
-          
-          const isAdminEmail = firebaseUser.email?.trim().toLowerCase() === "pcristo35@gmail.com";
-          
-          // Use onSnapshot for real-time profile updates
-          unsubscribeProfile = onSnapshot(userQ, async (snap) => {
-            try {
-              if (!snap.empty) {
-                const docSnap = snap.docs[0];
-                isCreatingUser.current = false;
-                const userData = docSnap.data() as User;
-                // ... rest of existence logic ...
-                const intendedRole = localStorage.getItem('intendedRole');
-                const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
+          const userEmail = (firebaseUser.email || '').trim().toLowerCase();
+          const isAdminEmail = userEmail === "pcristo35@gmail.com";
+          const intendedRole = (localStorage.getItem('intendedRole') as UserRole) || 'customer';
 
-                // Only enforce email verification for customers
-                if (isEmailProvider && !firebaseUser.emailVerified && userData.role === 'customer') {
-                  const justSignedUp = localStorage.getItem('justSignedUp') === 'true';
-                  await signOut(auth);
-                  setUser(null);
-                  if (justSignedUp) {
-                    toast.success(t('auth.verify_email_sent'));
-                    localStorage.removeItem('justSignedUp');
-                  } else {
-                    toast.error(t('auth.verify_email_first'));
-                  }
-                  setLoading(false);
-                  return;
-                }
-                
-                if (isAdminEmail && userData.role !== 'admin') {
-                  userData.role = 'admin';
-                  try {
-                    await setDoc(doc(db, 'users', docSnap.id), { role: 'admin' }, { merge: true });
-                    await setDoc(doc(db, 'users', firebaseUser.uid), { role: 'admin' }, { merge: true });
-                  } catch (e) {
-                    console.error('Error promoting admin user:', e);
-                  }
-                }
+          // 1. MASTER ADMIN BYPASS (pcristo35@gmail.com)
+          if (isAdminEmail) {
+            const adminUser: User = {
+              id: firebaseUser.uid,
+              authUid: firebaseUser.uid,
+              email: firebaseUser.email || 'pcristo35@gmail.com',
+              name: firebaseUser.displayName || 'Admin',
+              role: 'admin',
+              status: 'active'
+            };
 
-                // Ensure document exists at /users/{firebaseUser.uid}
-                if (docSnap.id !== firebaseUser.uid) {
-                  try {
-                    await setDoc(doc(db, 'users', firebaseUser.uid), {
-                      ...userData,
-                      id: firebaseUser.uid,
-                      authUid: firebaseUser.uid,
-                      role: isAdminEmail ? 'admin' : (userData.role || 'staff'),
-                    }, { merge: true });
-                  } catch (migErr) {
-                    console.warn('User UID migration notice:', migErr);
-                  }
-                }
-
-                if (userData.status === 'inactive' && !isAdminEmail) {
-                  await signOut(auth);
-                  setUser(null);
-                  toast.error(t('common.account_suspended') || 'Account suspended');
-                  localStorage.removeItem('intendedRole');
-                } else if (intendedRole === 'staff' && userData.role === 'customer' && !isAdminEmail) {
-                  await signOut(auth);
-                  setUser(null);
-                  toast.error(language === 'pt' ? 'O acesso à área de Administração é restrito.' : 'Access to the Admin area is restricted.');
-                  localStorage.removeItem('intendedRole');
-                } else {
-                  setUser({ id: docSnap.id, ...userData, role: isAdminEmail ? 'admin' : userData.role } as User);
-                  if (userData.role === 'customer' && !isAdminEmail) {
-                    syncExistingCustomerDetails(firebaseUser.uid, userData.email, userData.name || firebaseUser.displayName || 'Customer');
-                  }
-                  if (intendedRole) {
-                    toast.success(t('auth.login_success') || 'Login successful');
-                    localStorage.removeItem('intendedRole');
-                  }
-                }
-                setLoading(false);
-              } else {
-                // Not found in users. Check if they are a customer (who are no longer stored in users)
-                let custDocFound = false;
-                if (!isAdminEmail) {
-                  const custQ = query(collection(db, 'customers'), where('authUid', '==', firebaseUser.uid));
-                  const custSnap = await getDocs(custQ);
-                  
-                  if (!custSnap.empty) {
-                    custDocFound = true;
-                    const custDoc = custSnap.docs[0];
-                    const custData = custDoc.data();
-                    
-                    const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
-                    if (isEmailProvider && !firebaseUser.emailVerified) {
-                      await signOut(auth);
-                      setUser(null);
-                      toast.error(t('auth.verify_email_first'));
-                      setLoading(false);
-                      return;
-                    }
-                    
-                    if (custData.status === 'inactive') {
-                      await signOut(auth);
-                      setUser(null);
-                      toast.error(t('common.account_suspended') || 'Account suspended');
-                      return;
-                    }
-                    
-                    setUser({ 
-                      id: custDoc.id,
-                      email: custData.email,
-                      name: custData.name,
-                      role: 'customer',
-                      status: custData.status || 'active'
-                    });
-                    setLoading(false);
-                    return;
-                  }
-                }
-
-                // If we are already in the process of creating, don't try again
-                if (isCreatingUser.current) return;
-                
-                // Check for email verification for new signups (likely customers)
-                const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
-                if (isEmailProvider && !firebaseUser.emailVerified) {
-                  const justSignedUp = localStorage.getItem('justSignedUp') === 'true';
-                  await signOut(auth);
-                  setUser(null);
-                  if (justSignedUp) {
-                    toast.success(t('auth.verify_email_sent'));
-                    localStorage.removeItem('justSignedUp');
-                  } else {
-                    toast.error(t('auth.verify_email_first'));
-                  }
-                  setLoading(false);
-                  return;
-                }
-
-                // Only attempt creation if truly missing
-                const intendedRole = localStorage.getItem('intendedRole') as UserRole || 'customer';
-                const role: UserRole = isAdminEmail ? 'admin' : 'customer';
-                
-                // --- NEW LOGIC: ENFORCE REGISTRATION BEFORE LOGIN ---
-                const isCancellingAccount = sessionStorage.getItem('isCancellingAccount') === 'true';
-
-                if (isCancellingAccount) {
-                  setLoading(false);
-                  return;
-                }
-
-                if (role === 'customer' && !isEmailProvider && !isAdminEmail) {
-                   const isGoogleSignup = localStorage.getItem('isGoogleSignup') === 'true';
-                   localStorage.removeItem('isGoogleSignup'); // Clean up flag
-                   if (!isGoogleSignup) {
-                      // They are trying to login, but they never registered
-                      await signOut(auth);
-                      setUser(null);
-                      if (intendedRole === 'staff') {
-                         toast.error(language === 'pt' ? 'O acesso à área de Administração é restrito.' : 'Access to the Admin area is restricted.');
-                      } else {
-                         toast.error(t('login.no_account') || "Account not found. Please register first.");
-                      }
-                      setLoading(false);
-                      return;
-                   }
-                }
-                // ----------------------------------------------------
-                
-                const newId = firebaseUser.uid;
-
-                const newUser: User = { 
-                  id: newId,
-                  authUid: firebaseUser.uid,
-                  email: firebaseUser.email!, 
-                  role, 
-                  status: 'active',
-                  name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Unknown'
-                };
-
-                isCreatingUser.current = true;
-                try {
-                  if (role !== 'customer') {
-                    await setDoc(doc(db, 'users', newId), newUser);
-                  }
-                  // We also need to create a matching customer record if it's a customer
-                  if (role === 'customer') {
-                    await syncExistingCustomerDetails(firebaseUser.uid, newUser.email, newUser.name);
-                  }
-                } catch (createErr) {
-                  console.error('Error creating user document:', createErr);
-                  isCreatingUser.current = false;
-                  setLoading(false);
-                  return;
-                }
-                
-                localStorage.removeItem('intendedRole');
-                if (role === 'customer') {
-                   const custQ2 = query(collection(db, 'customers'), where('authUid', '==', firebaseUser.uid));
-                   const custSnap2 = await getDocs(custQ2);
-                   if (!custSnap2.empty) {
-                      const c = custSnap2.docs[0];
-                      setUser({ id: c.id, email: c.data().email, name: c.data().name, role: 'customer', status: 'active' });
-                   } else {
-                      setUser({ id: firebaseUser.uid, email: newUser.email, name: newUser.name, role: 'customer', status: 'active' });
-                   }
-                   isCreatingUser.current = false;
-                   setLoading(false);
-                }
-                // For non-customers, we wait for the next fire which will have exists() === true
-              }
-            } catch (err) {
-              console.error('Error in profile listener:', err);
-              setLoading(false);
-            }
-          }, (error) => {
-            console.error('Profile listener error:', error);
+            updateUserWithCache(adminUser);
+            localStorage.removeItem('intendedRole');
             setLoading(false);
-          });
+
+            // Keep user document updated in Firestore at users/{uid}
+            try {
+              await setDoc(doc(db, 'users', firebaseUser.uid), {
+                ...adminUser,
+                id: firebaseUser.uid,
+                authUid: firebaseUser.uid,
+                role: 'admin',
+                status: 'active'
+              }, { merge: true });
+            } catch (e) {
+              console.warn('Admin user doc sync note:', e);
+            }
+
+            unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+              if (snap.exists()) {
+                const liveData = snap.data();
+                updateUserWithCache({ id: snap.id, ...liveData, role: 'admin' } as User);
+              }
+            }, (err) => {
+              console.warn('Admin profile listener warning:', err);
+            });
+            return;
+          }
+
+          // 2. CHECK IF USER IS IN `users` COLLECTION (Staff / Other Admins)
+          let staffDocSnap: any = null;
+          try {
+            const directDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            if (directDoc.exists()) {
+              staffDocSnap = directDoc;
+            }
+          } catch (e) {}
+
+          if (!staffDocSnap) {
+            try {
+              const qAuth = query(collection(db, 'users'), where('authUid', '==', firebaseUser.uid));
+              const snapAuth = await getDocs(qAuth);
+              if (!snapAuth.empty) {
+                staffDocSnap = snapAuth.docs[0];
+              }
+            } catch (e) {}
+          }
+
+          if (!staffDocSnap && userEmail) {
+            try {
+              const qEmail = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
+              const snapEmail = await getDocs(qEmail);
+              if (!snapEmail.empty) {
+                staffDocSnap = snapEmail.docs[0];
+              } else {
+                const qEmailLower = query(collection(db, 'users'), where('email', '==', userEmail));
+                const snapEmailLower = await getDocs(qEmailLower);
+                if (!snapEmailLower.empty) {
+                  staffDocSnap = snapEmailLower.docs[0];
+                }
+              }
+            } catch (e) {}
+          }
+
+          // If found in `users` (Staff / Admin)
+          if (staffDocSnap && staffDocSnap.exists()) {
+            const userData = staffDocSnap.data() as User;
+            if (userData.status === 'inactive') {
+              await signOut(auth);
+              updateUserWithCache(null);
+              toast.error(t('common.account_suspended') || 'Account suspended');
+              setLoading(false);
+              return;
+            }
+
+            const staffUser: User = {
+              id: staffDocSnap.id,
+              authUid: firebaseUser.uid,
+              email: userData.email || firebaseUser.email || '',
+              name: userData.name || firebaseUser.displayName || 'Staff Member',
+              role: userData.role || 'staff',
+              status: userData.status || 'active'
+            };
+
+            // Ensure document at users/{uid} is synced
+            if (staffDocSnap.id !== firebaseUser.uid || !userData.authUid) {
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), {
+                  ...staffUser,
+                  id: firebaseUser.uid,
+                  authUid: firebaseUser.uid
+                }, { merge: true });
+              } catch (e) {
+                console.warn('Could not sync staff uid document:', e);
+              }
+            }
+
+            updateUserWithCache(staffUser);
+            localStorage.removeItem('intendedRole');
+            setLoading(false);
+
+            unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+              if (snap.exists()) {
+                updateUserWithCache({ id: snap.id, ...snap.data() } as User);
+              }
+            }, (err) => {
+              console.warn('Staff profile listener warning:', err);
+            });
+            return;
+          }
+
+          // 3. If NOT found in `users` and user intended to log in specifically as Staff
+          if (intendedRole === 'staff') {
+            await signOut(auth);
+            updateUserWithCache(null);
+            localStorage.removeItem('intendedRole');
+            toast.error(
+              language === 'pt'
+                ? 'Conta de funcionário não encontrada para este email Google. Solicite ao administrador para adicionar o seu email.'
+                : 'Staff account not found for this Google email. Please ask an administrator to add your email.'
+            );
+            setLoading(false);
+            return;
+          }
+
+          // 4. CUSTOMER AUTHENTICATION (Google or Email)
+          const isEmailProvider = firebaseUser.providerData.some(p => p.providerId === 'password');
+          if (isEmailProvider && !firebaseUser.emailVerified) {
+            const justSignedUp = localStorage.getItem('justSignedUp') === 'true';
+            await signOut(auth);
+            setUser(null);
+            if (justSignedUp) {
+              toast.success(t('auth.verify_email_sent'));
+              localStorage.removeItem('justSignedUp');
+            } else {
+              toast.error(t('auth.verify_email_first'));
+            }
+            setLoading(false);
+            return;
+          }
+
+          // Check if customer already exists in `customers`
+          let customerDocSnap: any = null;
+          try {
+            const qCustAuth = query(collection(db, 'customers'), where('authUid', '==', firebaseUser.uid));
+            const snapCustAuth = await getDocs(qCustAuth);
+            if (!snapCustAuth.empty) {
+              customerDocSnap = snapCustAuth.docs[0];
+            }
+          } catch (e) {}
+
+          if (!customerDocSnap && userEmail) {
+            try {
+              const qCustEmail = query(collection(db, 'customers'), where('email', '==', userEmail));
+              const snapCustEmail = await getDocs(qCustEmail);
+              if (!snapCustEmail.empty) {
+                customerDocSnap = snapCustEmail.docs[0];
+              } else {
+                const qCustEmailRaw = query(collection(db, 'customers'), where('email', '==', firebaseUser.email));
+                const snapCustEmailRaw = await getDocs(qCustEmailRaw);
+                if (!snapCustEmailRaw.empty) {
+                  customerDocSnap = snapCustEmailRaw.docs[0];
+                }
+              }
+            } catch (e) {}
+          }
+
+          if (customerDocSnap && customerDocSnap.exists()) {
+            const custData = customerDocSnap.data();
+            if (custData.status === 'inactive') {
+              await signOut(auth);
+              updateUserWithCache(null);
+              toast.error(t('common.account_suspended') || 'Account suspended');
+              setLoading(false);
+              return;
+            }
+
+            const currentCustomer: User = {
+              id: customerDocSnap.id,
+              authUid: firebaseUser.uid,
+              email: custData.email || firebaseUser.email || '',
+              name: custData.name || firebaseUser.displayName || 'Customer',
+              role: 'customer',
+              status: custData.status || 'active'
+            };
+
+            updateUserWithCache(currentCustomer);
+            localStorage.removeItem('intendedRole');
+            setLoading(false);
+
+            // Sync any existing details and reservations in background
+            syncExistingCustomerDetails(firebaseUser.uid, currentCustomer.email, currentCustomer.name);
+            return;
+          }
+
+          // Auto-create customer record for new Google Customer
+          const newCustomerUser: User = {
+            id: firebaseUser.uid,
+            authUid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Customer',
+            role: 'customer',
+            status: 'active'
+          };
+
+          updateUserWithCache(newCustomerUser);
+          localStorage.removeItem('intendedRole');
+          setLoading(false);
+
+          try {
+            await syncExistingCustomerDetails(firebaseUser.uid, newCustomerUser.email, newCustomerUser.name);
+          } catch (syncErr) {
+            console.warn('Customer initial sync notice:', syncErr);
+          }
         } else {
-          setUser(null);
+          // Firebase user is null
+          updateUserWithCache(null);
           setLoading(false);
         }
       } catch (error) {
         console.error('Auth state change error:', error);
-        setUser(null);
+        updateUserWithCache(null);
         setLoading(false);
       }
     });
 
     return () => {
-
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
     };
-  }, [t]);
+  }, [t, language]);
 
   const signIn = async (role: UserRole = 'customer', isSignup: boolean = false) => {
     try {
@@ -378,10 +424,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('isGoogleSignup');
       }
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
+      provider.setCustomParameters({ prompt: 'select_account' });
+      
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (popupErr: any) {
+        console.warn('Popup sign-in notice, attempting redirect fallback if necessary:', popupErr);
+        if (
+          popupErr?.code === 'auth/popup-blocked' ||
+          popupErr?.code === 'auth/cancelled-popup-request' ||
+          popupErr?.code === 'auth/operation-not-supported-in-this-environment' ||
+          popupErr?.code === 'auth/internal-error'
+        ) {
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw popupErr;
+      }
+    } catch (error: any) {
       console.error('Sign in error:', error);
-      toast.error(t('auth.login_error'));
+      if (error?.code === 'auth/unauthorized-domain') {
+        toast.error(
+          language === 'pt'
+            ? 'Domínio não autorizado no Firebase Auth. Adicione este domínio na consola Firebase.'
+            : 'Unauthorized domain in Firebase Auth. Please add this domain in Firebase Console Authentication settings.'
+        );
+      } else if (error?.code !== 'auth/popup-closed-by-user') {
+        toast.error(t('auth.login_error') || 'Error signing in');
+      }
     }
   };
 
@@ -442,16 +512,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Send verification email
       await sendEmailVerification(result.user);
       
-      const newUser: User = {
-        id: uid,
-        email,
-        name,
-        role: 'customer',
-        status: 'active'
-      };
-
-      // Do NOT save to 'users' for customer signup
-      // await setDoc(doc(db, 'users', uid), newUser);
       await syncExistingCustomerDetails(uid, email, name);
     } catch (error: any) {
       console.error('Sign up error:', error);

@@ -3,7 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { Resend } from "resend";
 import dotenv from "dotenv";
-import { sendReservationConfirmation, sendReservationReminder, sendReservationCancellation, sendReservationUpdate } from "./src/server/email";
+import { sendReservationConfirmation, sendReservationReminder, sendReservationCancellation, sendReservationUpdate, sendTestEmail } from "./src/server/email";
 import { startCronJobs } from "./src/server/cron";
 import { initializeApp as initAdminApp, getApps as getAdminApps } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
@@ -72,12 +72,34 @@ async function startServer() {
     }
   });
 
-  // API route for sending Resend Confirmation
-  
+  // Helper to ensure Resend API key and From Email are loaded from environment or Firestore
+  const enrichEmailBody = async (body: any = {}) => {
+    const data = { ...body };
+    if (!data.resendApiKey && !process.env.RESEND_API_KEY) {
+      try {
+        const adminApp = getAdminApps().length === 0 
+          ? initAdminApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'ai-studio-applet-webapp-d8b8b' })
+          : getAdminApps()[0];
+        const db = getAdminFirestore(adminApp);
+        const settingsSnap = await db.collection('settings').doc('main').get();
+        if (settingsSnap.exists) {
+          const s = settingsSnap.data();
+          if (s?.resendApiKey) data.resendApiKey = s.resendApiKey;
+          if (s?.resendFromEmail && !data.resendFromEmail) data.resendFromEmail = s.resendFromEmail;
+          if (s?.name && !data.restaurantName) data.restaurantName = s.name;
+        }
+      } catch (err) {
+        console.warn('[Email Server] Could not fetch fallback settings from Firestore:', err);
+      }
+    }
+    return data;
+  };
 
+  // API route for sending Resend Confirmation
   app.post('/api/email/confirmation', async (req, res) => {
     try {
-      const result = await sendReservationConfirmation(req.body);
+      const body = await enrichEmailBody(req.body);
+      const result = await sendReservationConfirmation(body);
       res.json(result);
     } catch(e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -86,7 +108,8 @@ async function startServer() {
 
   app.post('/api/email/reminder', async (req, res) => {
     try {
-      const result = await sendReservationReminder(req.body);
+      const body = await enrichEmailBody(req.body);
+      const result = await sendReservationReminder(body);
       res.json(result);
     } catch(e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -95,7 +118,8 @@ async function startServer() {
 
   app.post('/api/email/cancellation', async (req, res) => {
     try {
-      const result = await sendReservationCancellation(req.body);
+      const body = await enrichEmailBody(req.body);
+      const result = await sendReservationCancellation(body);
       res.json(result);
     } catch(e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -104,7 +128,18 @@ async function startServer() {
 
   app.post('/api/email/update', async (req, res) => {
     try {
-      const result = await sendReservationUpdate(req.body);
+      const body = await enrichEmailBody(req.body);
+      const result = await sendReservationUpdate(body);
+      res.json(result);
+    } catch(e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  app.post('/api/email/test', async (req, res) => {
+    try {
+      const body = await enrichEmailBody(req.body);
+      const result = await sendTestEmail(body);
       res.json(result);
     } catch(e: any) {
       res.status(500).json({ success: false, error: e.message });
@@ -232,7 +267,14 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        // Ensure Service Worker and Web Manifest are not aggressively cached by intermediate proxies
+        if (filePath.endsWith('sw.js') || filePath.endsWith('registerSW.js') || filePath.endsWith('manifest.webmanifest')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        }
+      }
+    }));
     // Important: Use * for Express v4 to handle SPA routing properly
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

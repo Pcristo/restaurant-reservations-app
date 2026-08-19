@@ -67,6 +67,9 @@ export default function AdminSettings() {
   const [showResetAccordion, setShowResetAccordion] = useState(false);
   const [showHeroAccordion, setShowHeroAccordion] = useState(false);
   const [showAdminDevelopingPassword, setShowAdminDevelopingPassword] = useState(false);
+  const [testEmailRecipient, setTestEmailRecipient] = useState('');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ success?: boolean; message?: string } | null>(null);
 
   // Special Schedule State & Handlers
   const [isSpecialScheduleModalOpen, setIsSpecialScheduleModalOpen] = useState(false);
@@ -2986,6 +2989,78 @@ export default function AdminSettings() {
                 <p className="text-[10px] text-gray-500 mt-1 italic">
                   {t('settings.resend_from_email_desc')}
                 </p>
+              </div>
+
+              {/* Test Email Section */}
+              <div className={cn(
+                "p-3 rounded-lg border flex flex-col gap-2 mt-2",
+                settings?.theme === 'dark' ? "bg-gray-800/60 border-gray-700" : "bg-amber-50/50 border-amber-200"
+              )}>
+                <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                  {language === 'pt' ? 'Testar Envio de Email Resend' : 'Test Resend Email Delivery'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={testEmailRecipient}
+                    onChange={(e) => setTestEmailRecipient(e.target.value)}
+                    placeholder={formData.email || "exemplo@gmail.com"}
+                    className={cn(
+                      "flex-1 px-3 py-1.5 border rounded-lg text-xs outline-none focus:ring-2 focus:ring-amber-500",
+                      settings?.theme === 'dark' ? "bg-gray-900 border-gray-700 text-white" : "bg-white border-gray-300"
+                    )}
+                  />
+                  <button
+                    type="button"
+                    disabled={isSendingTestEmail}
+                    onClick={async () => {
+                      const target = (testEmailRecipient || formData.email || '').trim();
+                      if (!target) {
+                        toast.error(language === 'pt' ? 'Indique um email de destino.' : 'Please enter a recipient email.');
+                        return;
+                      }
+                      setIsSendingTestEmail(true);
+                      setTestEmailResult(null);
+                      try {
+                        const res = await fetch('/api/email/test', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            email: target,
+                            resendApiKey: formData.resendApiKey,
+                            resendFromEmail: formData.resendFromEmail,
+                            restaurantName: formData.name || settings?.name,
+                            language,
+                          })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          toast.success(language === 'pt' ? 'Email de teste enviado!' : 'Test email sent!');
+                          setTestEmailResult({ success: true, message: language === 'pt' ? `Enviado com sucesso para ${target}` : `Sent successfully to ${target}` });
+                        } else {
+                          toast.error(data.error || 'Failed to send test email');
+                          setTestEmailResult({ success: false, message: data.error || 'Failed' });
+                        }
+                      } catch (err: any) {
+                        toast.error(err.message || 'Error sending test email');
+                        setTestEmailResult({ success: false, message: err.message });
+                      } finally {
+                        setIsSendingTestEmail(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-50"
+                  >
+                    {isSendingTestEmail ? (language === 'pt' ? 'A enviar...' : 'Sending...') : (language === 'pt' ? 'Enviar Teste' : 'Send Test')}
+                  </button>
+                </div>
+                {testEmailResult && (
+                  <p className={cn(
+                    "text-[11px] font-medium mt-0.5",
+                    testEmailResult.success ? "text-green-600 dark:text-green-400" : "text-red-500"
+                  )}>
+                    {testEmailResult.message}
+                  </p>
+                )}
               </div>
             </div>
 

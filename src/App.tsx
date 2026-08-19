@@ -39,6 +39,7 @@ import { FreezeOverlay } from './components/FreezeOverlay';
 import CookieConsent from './components/CookieConsent';
 import { BookingNotificationListener } from './components/BookingNotificationListener';
 import Preloader from './components/Preloader';
+import { SyncIndicator } from './components/SyncIndicator';
 import { updateFavicon } from './lib/utils';
 
 function ProtectedRoute({ children, role }: { children: React.ReactNode, role?: 'admin' | 'staff' | 'customer' }) {
@@ -219,6 +220,7 @@ function AppContent() {
 
   return (
     <>
+      <SyncIndicator />
       <AnimatePresence>
         {showPreloader && <Preloader />}
       </AnimatePresence>

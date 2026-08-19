@@ -5,7 +5,8 @@ import { useSettings } from '../hooks/useSettings';
 import { useLanguage } from '../hooks/useLanguage';
 import { useNotifications } from '../hooks/useNotifications';
 import { useSmartAlerts } from '../hooks/useSmartAlerts';
-import { LogIn, LogOut, Menu, X, LayoutDashboard, Calendar, Users, Settings, Globe, Bell, Phone, Mail, Sparkles, Eye, ShieldAlert, HelpCircle, BarChart3 } from 'lucide-react';
+import { useNetworkSync } from '../hooks/useNetworkSync';
+import { LogIn, LogOut, Menu, X, LayoutDashboard, Calendar, Users, Settings, Globe, Bell, Phone, Mail, Sparkles, Eye, ShieldAlert, HelpCircle, BarChart3, WifiOff, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { cn, getOptimizedUrl } from '../lib/utils';
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -62,22 +63,9 @@ export default function Navbar() {
     setExitPendingTarget(null);
   };
 
-  const [isOnline, setIsOnline] = React.useState(navigator.onLine);
+  const { isOnline, syncState, statusText, shortStatusText } = useNetworkSync();
   const { smartAlerts, loading } = useSmartAlerts();
   const smartAlertsCount = smartAlerts.length;
-
-  React.useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   React.useEffect(() => {
     if (isPopupOpen && newBookingsList.length === 0) {
@@ -165,7 +153,7 @@ export default function Navbar() {
       {/* Secondary Admin Top Bar */}
       {isAdmin && (
         <div className="bg-gray-900 text-gray-400 py-1.5 px-4 sm:px-6 lg:px-8 border-b border-gray-800">
-          <div className={cn("mx-auto flex justify-end items-center gap-6 text-[10px] font-bold uppercase tracking-widest", settings?.containerWidth === '1480px' && location.pathname !== '/' ? "w-full max-w-[1480px]" : "w-full max-w-[1267px]")}>
+          <div className={cn("mx-auto flex justify-end items-center gap-6 text-[10px] font-bold uppercase tracking-widest", settings?.containerWidth === '1480px' ? "w-full max-w-[1480px]" : "w-full max-w-[1267px]")}>
             <Link 
               to="/admin/insights" 
               onClick={(e) => handleNavigationAttempt(e, '/admin/insights')}
@@ -190,7 +178,7 @@ export default function Navbar() {
           </div>
         </div>
       )}
-      <div className={cn("mx-auto px-4 sm:px-6 lg:px-8", settings?.containerWidth === '1480px' && location.pathname !== '/' ? "w-full max-w-[1480px]" : "w-full max-w-[1267px]")}>
+      <div className={cn("mx-auto px-4 sm:px-6 lg:px-8", settings?.containerWidth === '1480px' ? "w-full max-w-[1480px]" : "w-full max-w-[1267px]")}>
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link 
@@ -391,10 +379,22 @@ export default function Navbar() {
               );
             })}
 
-            {!isOnline && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/25 animate-pulse ml-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+            {syncState === 'offline' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/25 animate-pulse ml-2" title={statusText}>
+                <WifiOff size={13} className="text-amber-500" />
                 <span>{language === 'pt' ? 'Modo Offline' : 'Offline Mode'}</span>
+              </div>
+            )}
+            {syncState === 'syncing' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/25 ml-2" title={statusText}>
+                <RefreshCw size={13} className="text-sky-500 animate-spin" />
+                <span>{language === 'pt' ? 'A sincronizar...' : 'Syncing...'}</span>
+              </div>
+            )}
+            {syncState === 'synced' && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 ml-2" title={statusText}>
+                <CheckCircle2 size={13} className="text-emerald-500" />
+                <span>{language === 'pt' ? 'Sincronizado' : 'Synced'}</span>
               </div>
             )}
 
@@ -483,10 +483,22 @@ export default function Navbar() {
 
           {/* Mobile menu button */}
           <div className="min-[1240px]:hidden flex items-center gap-3">
-            {!isOnline && (
-              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/25 animate-pulse">
-                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+            {syncState === 'offline' && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/25 animate-pulse">
+                <WifiOff size={11} className="text-amber-500" />
                 <span>{language === 'pt' ? 'Offline' : 'Offline'}</span>
+              </div>
+            )}
+            {syncState === 'syncing' && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/25">
+                <RefreshCw size={11} className="text-sky-500 animate-spin" />
+                <span>{language === 'pt' ? 'Sync...' : 'Sync...'}</span>
+              </div>
+            )}
+            {syncState === 'synced' && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/25">
+                <CheckCircle2 size={11} className="text-emerald-500" />
+                <span>{language === 'pt' ? 'OK' : 'OK'}</span>
               </div>
             )}
             <button

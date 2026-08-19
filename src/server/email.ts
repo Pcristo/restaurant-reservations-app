@@ -39,29 +39,24 @@ const getResendClient = (apiKey?: string) => {
   return new Resend(rawKey);
 };
 
-const getFromEmail = (rawFromEmail?: string) => {
-  const fromEnv = rawFromEmail || process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-  const lowerFrom = fromEnv.toLowerCase().trim();
-  const isFreeOrOnboarding =
-    lowerFrom === 'onboarding@resend.dev' ||
-    lowerFrom.includes('@gmail.com') ||
-    lowerFrom.includes('@yahoo.') ||
-    lowerFrom.includes('@hotmail.') ||
-    lowerFrom.includes('@outlook.') ||
-    lowerFrom.includes('@aol.') ||
-    lowerFrom.includes('@icloud.');
-  
-  if (!isFreeOrOnboarding && fromEnv.includes('@')) {
-    return fromEnv;
+const getFromEmail = (rawFromEmail?: string, restaurantName?: string) => {
+  const fromEnv = (rawFromEmail || process.env.RESEND_FROM_EMAIL || '').trim();
+  const name = (restaurantName || 'Restaurante').replace(/[<>]/g, '').trim();
+
+  if (fromEnv) {
+    if (fromEnv.includes('<') && fromEnv.includes('>')) {
+      return fromEnv;
+    }
+    if (fromEnv.includes('@')) {
+      return `${name} <${fromEnv}>`;
+    }
   }
-  return 'onboarding@resend.dev';
+
+  return `${name} <onboarding@resend.dev>`;
 };
 
-const getTargetEmail = (email: string, fromEmail: string) => {
-  if (fromEmail === 'onboarding@resend.dev') {
-    return 'pedro.web.test@gmail.com'; // Resend restriction on free tier
-  }
-  return email;
+const getTargetEmail = (email: string) => {
+  return (email || '').trim();
 };
 
 // Generates Schema.org JSON-LD for FoodEstablishmentReservation
@@ -172,8 +167,8 @@ export const sendReservationConfirmation = async (opts: EmailOptions) => {
   `;
 
   const html = getBaseHtml(opts, title, content, 'ReservationConfirmed');
-  const fromEmail = getFromEmail(opts.resendFromEmail);
-  const toEmail = getTargetEmail(opts.email, fromEmail);
+  const fromEmail = getFromEmail(opts.resendFromEmail, opts.restaurantName);
+  const toEmail = getTargetEmail(opts.email);
 
   try {
     const { data, error } = await resend.emails.send({
@@ -267,8 +262,8 @@ export const sendReservationReminder = async (opts: EmailOptions) => {
   `;
 
   const html = getBaseHtml(opts, title, content, 'ReservationConfirmed');
-  const fromEmail = getFromEmail(opts.resendFromEmail);
-  const toEmail = getTargetEmail(opts.email, fromEmail);
+  const fromEmail = getFromEmail(opts.resendFromEmail, opts.restaurantName);
+  const toEmail = getTargetEmail(opts.email);
   
   // Calculate schedule time (1 day before)
   const timezone = opts.timezone || 'UTC';
@@ -277,11 +272,7 @@ export const sendReservationReminder = async (opts: EmailOptions) => {
   
   const reminderTime = subDays(resDate, 1);
   if (!isPast(reminderTime)) {
-    // Resend scheduled_at requires format: in up to 72 hours, ISO 8601
-    // Actually, resend allows scheduling up to 72 hours in advance.
-    // Wait, 72 hours limit in Resend?
-    // "You can schedule emails up to 72 hours in advance."
-    // If the reservation is further out, we can't schedule it directly with Resend!
+    // scheduled_at
   }
 
   try {
@@ -333,8 +324,8 @@ export const sendReservationCancellation = async (opts: EmailOptions) => {
   `;
 
   const html = getBaseHtml(opts, title, content, 'ReservationCancelled');
-  const fromEmail = getFromEmail(opts.resendFromEmail);
-  const toEmail = getTargetEmail(opts.email, fromEmail);
+  const fromEmail = getFromEmail(opts.resendFromEmail, opts.restaurantName);
+  const toEmail = getTargetEmail(opts.email);
 
   try {
     const { data, error } = await resend.emails.send({
@@ -392,8 +383,8 @@ export const sendReservationUpdate = async (opts: EmailOptions) => {
   `;
 
   const html = getBaseHtml(opts, title, content, 'ReservationConfirmed');
-  const fromEmail = getFromEmail(opts.resendFromEmail);
-  const toEmail = getTargetEmail(opts.email, fromEmail);
+  const fromEmail = getFromEmail(opts.resendFromEmail, opts.restaurantName);
+  const toEmail = getTargetEmail(opts.email);
 
   try {
     const { data, error } = await resend.emails.send({
@@ -423,5 +414,64 @@ export const sendReservationUpdate = async (opts: EmailOptions) => {
       console.error('[Email Service] Unexpected update error:', errMsg);
     }
     return { success: false, error: errMsg, isAuthError };
+  }
+};
+
+export const sendTestEmail = async (opts: {
+  email: string;
+  resendApiKey?: string;
+  resendFromEmail?: string;
+  restaurantName?: string;
+  language?: string;
+}) => {
+  const resend = getResendClient(opts.resendApiKey);
+  if (!resend) {
+    return { success: false, error: 'Resend API key is missing or not configured.' };
+  }
+  const isPt = opts.language === 'pt';
+  const name = opts.restaurantName || 'Nortada';
+  const title = isPt ? 'Email de Teste' : 'Test Email';
+  const fromEmail = getFromEmail(opts.resendFromEmail, name);
+  const toEmail = getTargetEmail(opts.email);
+
+  if (!toEmail) {
+    return { success: false, error: 'Recipient email address is required.' };
+  }
+
+  const content = `
+    <p>${isPt ? 'Olá!' : 'Hello!'}</p>
+    <p>${isPt ? `Este é um email de teste enviado pelo sistema de reservas do <strong>${name}</strong>.` : `This is a test email sent from the <strong>${name}</strong> reservation management system.`}</p>
+    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; margin: 20px 0; color: #166534;">
+      <strong>✓ ${isPt ? 'Configuração Resend Validada com Sucesso!' : 'Resend Configuration Successfully Validated!'}</strong>
+      <p style="margin: 5px 0 0 0; font-size: 13px;">${isPt ? 'O seu serviço de envio de emails está operacional e pronto para enviar confirmações, lembretes e cancelamentos.' : 'Your email delivery service is operational and ready to send confirmations, reminders, and cancellations.'}</p>
+    </div>
+  `;
+
+  const html = getBaseHtml({
+    email: toEmail,
+    name: 'Admin',
+    date: new Date().toISOString().split('T')[0],
+    time: '12:00',
+    guests: 2,
+    restaurantName: name,
+    language: opts.language,
+  } as any, title, content, 'ReservationConfirmed');
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: fromEmail,
+      to: toEmail,
+      subject: `${title} - ${name}`,
+      html,
+    });
+
+    if (error) {
+      const errMsg = error.message || (error as any).name || 'Failed to send test email';
+      return { success: false, error: errMsg };
+    }
+    return { success: true, messageId: data?.id };
+  } catch (err: any) {
+    const errMsg = err?.message || (typeof err === 'string' ? err : 'Unknown error');
+    return { success: false, error: errMsg };
   }
 };
