@@ -18,6 +18,8 @@ import { toast } from 'react-hot-toast';
 import { auth, db } from '../firebase';
 import { User, UserRole } from '../types';
 import { useLanguage } from './useLanguage';
+import { ShieldAlert, Copy, Check, ExternalLink, X, Globe } from 'lucide-react';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthContextType {
   user: User | null;
@@ -45,6 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   });
   const [loading, setLoading] = useState(true);
+  const [unauthorizedDomainModal, setUnauthorizedDomainModal] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const { t, language } = useLanguage();
 
   const updateUserWithCache = (newUser: User | null) => {
@@ -154,7 +158,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       })
       .catch((err) => {
-        if (err?.code !== 'auth/credential-already-in-use') {
+        if (err?.code === 'auth/unauthorized-domain') {
+          setUnauthorizedDomainModal(window.location.hostname);
+        } else if (err?.code !== 'auth/credential-already-in-use') {
           console.warn('Redirect sign-in check notice:', err);
         }
       });
@@ -444,6 +450,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       console.error('Sign in error:', error);
       if (error?.code === 'auth/unauthorized-domain') {
+        setUnauthorizedDomainModal(window.location.hostname);
         toast.error(
           language === 'pt'
             ? 'Domínio não autorizado no Firebase Auth. Adicione este domínio na consola Firebase.'
@@ -584,6 +591,106 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isCustomer 
     }}>
       {children}
+
+      {unauthorizedDomainModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-gray-200 dark:border-gray-800 relative text-left">
+            <button 
+              onClick={() => setUnauthorizedDomainModal(null)}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                <ShieldAlert size={26} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                  {language === 'pt' ? 'Domínio Não Autorizado no Firebase' : 'Unauthorized Domain in Firebase'}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {language === 'pt' ? 'Configuração necessária para Google Sign-In' : 'Configuration required for Google Sign-In'}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 leading-relaxed">
+              {language === 'pt'
+                ? 'Para fazer login com a Google nesta versão online, o domínio atual deve ser adicionado à lista de domínios autorizados na consola do Firebase.'
+                : 'To log in with Google on this live version, your current domain must be added to the authorized domains list in your Firebase Console.'}
+            </p>
+
+            <div className="mb-5">
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
+                {language === 'pt' ? 'Domínio Atual a Copiar' : 'Current Domain to Copy'}
+              </label>
+              <div className="flex items-center gap-2 p-2.5 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700">
+                <Globe size={18} className="text-gray-400 flex-shrink-0" />
+                <span className="font-mono text-xs sm:text-sm font-semibold text-gray-900 dark:text-white flex-1 truncate select-all">
+                  {unauthorizedDomainModal}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(unauthorizedDomainModal);
+                    setCopied(true);
+                    toast.success(language === 'pt' ? 'Domínio copiado!' : 'Domain copied!');
+                    setTimeout(() => setCopied(false), 3000);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? (language === 'pt' ? 'Copiado' : 'Copied') : (language === 'pt' ? 'Copiar' : 'Copy')}
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50/70 dark:bg-amber-950/30 rounded-xl border border-amber-200/80 dark:border-amber-800/50 mb-5 text-xs text-gray-700 dark:text-gray-300 space-y-2">
+              <p className="font-bold text-amber-900 dark:text-amber-300">
+                {language === 'pt' ? 'Como Resolver em 3 Passos Rápidos:' : 'How to Fix in 3 Quick Steps:'}
+              </p>
+              <ol className="list-decimal list-inside space-y-1.5 text-gray-600 dark:text-gray-400">
+                <li>
+                  {language === 'pt' 
+                    ? 'Abra a Consola Firebase > Authentication > Definições (Settings).' 
+                    : 'Open Firebase Console > Authentication > Settings.'}
+                </li>
+                <li>
+                  {language === 'pt' 
+                    ? 'Clique na secção "Domínios Autorizados" (Authorized domains).' 
+                    : 'Click on the "Authorized domains" section.'}
+                </li>
+                <li>
+                  {language === 'pt' 
+                    ? 'Clique em "Adicionar domínio", cole o domínio acima e clique em Guardar.' 
+                    : 'Click "Add domain", paste the domain above, and click Save.'}
+                </li>
+              </ol>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <a
+                href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm shadow transition-colors"
+              >
+                <span>{language === 'pt' ? 'Abrir Consola Firebase' : 'Open Firebase Console'}</span>
+                <ExternalLink size={15} />
+              </a>
+              <button
+                type="button"
+                onClick={() => setUnauthorizedDomainModal(null)}
+                className="py-2.5 px-5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl font-semibold text-sm transition-colors cursor-pointer"
+              >
+                {language === 'pt' ? 'Fechar' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }

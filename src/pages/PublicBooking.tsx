@@ -5,7 +5,7 @@ import { useReservations } from '../hooks/useReservations';
 import { useLanguage } from '../hooks/useLanguage';
 import { useAuth } from '../hooks/useAuth';
 import { format, addMinutes, parse, isSameDay, isBefore, isAfter, addDays, parseISO, addMonths } from 'date-fns';
-import { Calendar, Users, Clock, CheckCircle, AlertCircle, X, Bell, LogIn, Phone, Ban, ShieldCheck, Loader2 } from 'lucide-react';
+import { Calendar, Users, Clock, CheckCircle, AlertCircle, X, Bell, LogIn, Phone, Ban, ShieldCheck, Loader2, Copy, Check } from 'lucide-react';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs from 'dayjs';
 import { motion, AnimatePresence } from 'motion/react';
@@ -69,6 +69,7 @@ export default function PublicBooking() {
 
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [bookingStatus, setBookingStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [copiedRef, setCopiedRef] = useState(false);
   const [showClosedModal, setShowClosedModal] = useState(false);
   const [showPromoPopup, setShowPromoPopup] = useState(false);
   const [isVerified, setIsVerified] = useState(true);
@@ -120,6 +121,16 @@ export default function PublicBooking() {
     email: '',
     notes: ''
   });
+
+  const [confirmedBooking, setConfirmedBooking] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    date: string;
+    time: string;
+    guests: number;
+    bookingNumber?: string;
+  } | null>(null);
 
   const [profilePhoneVerified, setProfilePhoneVerified] = useState(false);
   const [profilePhone, setProfilePhone] = useState('');
@@ -896,9 +907,23 @@ export default function PublicBooking() {
       // We no longer update the customer profile with booking form data
       // as requested by the user, to prevent overwriting their saved info.
 
+      setConfirmedBooking({
+        name: formData.name,
+        phone: formData.phone,
+        email: formData.email,
+        date,
+        time: selectedTime || '',
+        guests,
+        bookingNumber: addedRes?.bookingNumber
+      });
+
       setBookingStatus('success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      toast.success(t('public.success_title'));
+      toast.success(
+        language === 'pt'
+          ? `Obrigado, ${formData.name}! ${t('public.success_title')}`
+          : `Thank you, ${formData.name}! ${t('public.success_title')}`
+      );
     } catch (error) {
       console.error(error);
       setBookingStatus('error');
@@ -915,31 +940,185 @@ export default function PublicBooking() {
   }
 
   if (bookingStatus === 'success') {
+    const customerName = confirmedBooking?.name || formData.name;
+    const bookingDate = confirmedBooking?.date || date;
+    const bookingTime = confirmedBooking?.time || selectedTime || '';
+    const bookingGuests = confirmedBooking?.guests || guests;
+    const bookingNumber = confirmedBooking?.bookingNumber;
+    const bookingEmail = confirmedBooking?.email || formData.email;
+
     return (
-      <div className="max-w-md mx-auto py-20 px-4 text-center">
+      <div className="max-w-lg mx-auto py-12 sm:py-16 px-4 text-center">
         <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100"
+          initial={{ scale: 0.9, opacity: 0, y: 16 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className={cn(
+            "p-6 sm:p-7 rounded-2xl shadow-xl border relative overflow-hidden transition-colors duration-300",
+            settings?.theme === 'dark' 
+              ? "bg-gray-900 border-gray-800 text-white" 
+              : "bg-white border-gray-200 text-gray-900"
+          )}
         >
-          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle size={40} />
+          {/* Top Success Badge */}
+          <div 
+            className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm"
+            style={{
+              backgroundColor: settings?.theme === 'dark' ? 'rgba(34, 197, 94, 0.18)' : '#dcfce7',
+              color: '#15803d'
+            }}
+          >
+            <CheckCircle size={32} className="stroke-[2.5]" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">{t('public.success_title')}</h2>
-          <p className="text-gray-600 mb-8">
-            {t('public.success_desc')}
-            <br />
-            {t('common.date')}: {format(parseISO(date), 'dd/MM/yyyy')}, {t('common.time')}: {selectedTime ? formatDisplayTime(selectedTime, settings) : ''}
+
+          {/* Warm Personal Thanks Greeting with Customer Name */}
+          <div className="mb-2.5">
+            <span 
+              className={cn(
+                "inline-block text-xs sm:text-[13px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full border",
+                settings?.theme === 'dark' 
+                  ? "bg-gray-800 border-gray-700 text-amber-300" 
+                  : "bg-amber-100/70 border-amber-200 text-gray-900"
+              )}
+            >
+              {language === 'pt'
+                ? `Obrigado, ${customerName}!`
+                : `Thank you, ${customerName}!`}
+            </span>
+          </div>
+
+          {/* Title & Subtitle */}
+          <h2 className={cn(
+            "text-xl sm:text-2xl font-black mb-1.5 tracking-tight",
+            settings?.theme === 'dark' ? "text-white" : "text-gray-950"
+          )}>
+            {t('public.success_title')}
+          </h2>
+          <p className={cn(
+            "text-xs sm:text-sm mb-5 font-semibold",
+            settings?.theme === 'dark' ? "text-gray-300" : "text-gray-700"
+          )}>
+            {language === 'pt' ? (
+              <>
+                Esperamos por si no{' '}
+                <span 
+                  className="font-bold" 
+                  style={{ color: settings?.primaryColor || '#d97706' }}
+                >
+                  {settings?.name?.trim() || APP_CONFIG.appName || 'DineMaster Pro'}
+                </span>
+                .
+              </>
+            ) : (
+              <>
+                We look forward to seeing you at{' '}
+                <span 
+                  className="font-bold" 
+                  style={{ color: settings?.primaryColor || '#d97706' }}
+                >
+                  {settings?.name?.trim() || APP_CONFIG.appName || 'DineMaster Pro'}
+                </span>
+                .
+              </>
+            )}
           </p>
+
+          {/* Structured Reservation Details Card */}
+          <div className={cn(
+            "p-3.5 sm:p-4 rounded-xl mb-4.5 text-left border divide-y transition-colors shadow-sm",
+            settings?.theme === 'dark'
+              ? "bg-gray-800/90 border-gray-700 divide-gray-700/80 text-gray-200"
+              : "bg-gray-50/90 border-gray-200 divide-gray-200/80 text-gray-700"
+          )}>
+            {customerName && (
+              <div className="flex items-center justify-between pb-2 sm:pb-2.5 text-xs sm:text-[13.5px]">
+                <span className="font-bold text-gray-700 dark:text-gray-200">{t('common.name')}:</span>
+                <span className="font-bold text-gray-700 dark:text-gray-200">{customerName}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between py-2 sm:py-2.5 text-xs sm:text-[13.5px]">
+              <span className="font-bold text-gray-700 dark:text-gray-200">{t('common.date')}:</span>
+              <span className="font-bold text-gray-700 dark:text-gray-200">
+                {bookingDate ? format(parseISO(bookingDate), 'dd/MM/yyyy') : ''}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 sm:py-2.5 text-xs sm:text-[13.5px]">
+              <span className="font-bold text-gray-700 dark:text-gray-200">{t('common.time')}:</span>
+              <span className="font-bold text-gray-700 dark:text-gray-200">
+                {bookingTime ? formatDisplayTime(bookingTime, settings) : ''}
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-2 sm:py-2.5 text-xs sm:text-[13.5px]">
+              <span className="font-bold text-gray-700 dark:text-gray-200">{t('common.guests')}:</span>
+              <span className="font-bold text-gray-700 dark:text-gray-200">
+                {bookingGuests} {bookingGuests === 1 ? (language === 'pt' ? 'Pessoa' : 'Guest') : (language === 'pt' ? 'Pessoas' : 'Guests')}
+              </span>
+            </div>
+            {bookingNumber && (
+              <div className="flex items-center justify-between pt-2 sm:pt-2.5 text-xs sm:text-[13.5px]">
+                <span className="font-bold text-gray-700 dark:text-gray-200">
+                  {language === 'pt' ? 'Nº de Reserva' : 'Booking Ref'}:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span 
+                    className="font-mono font-bold text-xs sm:text-[13.5px]"
+                    style={{ color: settings?.primaryColor || '#d97706' }}
+                  >
+                    #{bookingNumber}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`#${bookingNumber}`);
+                      setCopiedRef(true);
+                      toast.success(
+                        language === 'pt' 
+                          ? 'Nº de reserva copiado!' 
+                          : 'Booking ref copied!'
+                      );
+                      setTimeout(() => setCopiedRef(false), 2500);
+                    }}
+                    title={language === 'pt' ? 'Copiar número de reserva' : 'Copy booking reference'}
+                    className="p-1 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white rounded hover:bg-gray-200/70 dark:hover:bg-gray-700 transition-colors cursor-pointer inline-flex items-center justify-center"
+                    aria-label="Copy booking reference"
+                  >
+                    {copiedRef ? (
+                      <Check size={13} className="text-green-600 dark:text-green-400 stroke-[2.5]" />
+                    ) : (
+                      <Copy size={13} />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {bookingEmail && (
+            <p className={cn(
+              "text-[11px] sm:text-xs mb-5 leading-relaxed font-medium",
+              settings?.theme === 'dark' ? "text-gray-400" : "text-gray-600"
+            )}>
+              {language === 'pt'
+                ? `Enviámos uma confirmação detalhada para ${bookingEmail}.`
+                : `A confirmation email has been sent to ${bookingEmail}.`}
+            </p>
+          )}
+
+          {/* Action Button */}
           <button 
             onClick={() => {
               setBookingStatus('idle');
               setSelectedTime(null);
+              setConfirmedBooking(null);
               setFormData({ name: '', phone: '', email: '', notes: '' });
             }}
-            className="w-full bg-amber-600 text-white py-3 rounded-lg font-semibold hover:bg-amber-700 transition-colors"
+            className="w-full text-white py-3 px-5 rounded-xl font-bold text-xs sm:text-[14px] transition-all shadow-md hover:opacity-95 hover:shadow-lg active:scale-[0.99] cursor-pointer"
+            style={{ 
+              backgroundColor: settings?.primaryColor || '#d97706',
+              boxShadow: `0 8px 16px -4px ${settings?.primaryColor ? settings.primaryColor + '35' : 'rgba(217, 119, 6, 0.25)'}`
+            }}
           >
-            {t('nav.book')}
+            {language === 'pt' ? 'Fazer Nova Reserva' : 'Book Another Table'}
           </button>
         </motion.div>
       </div>
