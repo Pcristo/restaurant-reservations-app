@@ -1,3 +1,5 @@
+import { getFirestoreSettings } from './firebaseAdmin';
+
 export interface SendSmsPayload {
   phoneNumber: string;
   code: string;
@@ -18,9 +20,22 @@ export async function sendSmsViaTwilio(payload: SendSmsPayload, env: Record<stri
     };
   }
 
-  const accountSid = (payload.twilioAccountSid || env.TWILIO_ACCOUNT_SID || '').trim();
-  const authToken = (payload.twilioAuthToken || env.TWILIO_AUTH_TOKEN || '').trim();
-  const twilioPhone = (payload.twilioPhoneNumber || env.TWILIO_PHONE_NUMBER || '').trim();
+  let accountSid = (payload.twilioAccountSid || env.TWILIO_ACCOUNT_SID || '').trim();
+  let authToken = (payload.twilioAuthToken || env.TWILIO_AUTH_TOKEN || '').trim();
+  let twilioPhone = (payload.twilioPhoneNumber || env.TWILIO_PHONE_NUMBER || '').trim();
+  let restName = restaurantName || 'DineMaster';
+
+  if (!accountSid || !authToken || !twilioPhone) {
+    try {
+      const settings = await getFirestoreSettings(env);
+      if (!accountSid && settings?.twilioAccountSid) accountSid = settings.twilioAccountSid.trim();
+      if (!authToken && settings?.twilioAuthToken) authToken = settings.twilioAuthToken.trim();
+      if (!twilioPhone && settings?.twilioPhoneNumber) twilioPhone = settings.twilioPhoneNumber.trim();
+      if (!restaurantName && (settings?.name || settings?.restaurantName)) restName = settings.name || settings.restaurantName;
+    } catch (e) {
+      console.warn('[Twilio Edge] Could not fetch settings fallback from Firestore:', e);
+    }
+  }
 
   if (!accountSid || !authToken || !twilioPhone) {
     return {
@@ -29,8 +44,6 @@ export async function sendSmsViaTwilio(payload: SendSmsPayload, env: Record<stri
       status: 400
     };
   }
-
-  const restName = restaurantName || 'DineMaster';
   const bodyText = `[${restName}] O seu codigo de verificacao e: ${code}. Valido por 10 minutos. / Your verification code is: ${code}. Valid for 10 minutes.`;
 
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;

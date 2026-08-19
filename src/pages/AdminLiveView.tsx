@@ -902,7 +902,67 @@ export default function AdminLiveView() {
         addPayload.preferredTableUnavailable = true;
       }
 
-      await addReservation(addPayload);
+      const addedRes = await addReservation(addPayload);
+      
+      // Send confirmation email if email exists and setting is enabled
+      if (newResData.email && settings?.autoSendManualReservationsEmails) {
+        try {
+          const resEmail = await fetch('/api/email/confirmation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: newResData.email,
+              name: newResData.name,
+              date: selectedDate,
+              time: formatDisplayTime(newResData.time, settings),
+              guests: newResData.guests,
+              restaurantName: settings?.name || APP_CONFIG.appName,
+              resendApiKey: settings?.resendApiKey || (import.meta as any).env?.VITE_RESEND_API_KEY || (import.meta as any).env?.RESEND_API_KEY || '',
+              resendFromEmail: settings?.resendFromEmail || (import.meta as any).env?.VITE_RESEND_FROM_EMAIL || (import.meta as any).env?.RESEND_FROM_EMAIL || '',
+              language: newResData.language || language,
+              logoUrl: settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
+              restaurantEmail: settings?.email || APP_CONFIG.email,
+              restaurantPhone: settings?.phone || APP_CONFIG.phone,
+              restaurantAddress: settings?.address || APP_CONFIG.address,
+              bookingNumber: addedRes?.bookingNumber || '',
+              reservationId: addedRes?.id || '',
+              timezone: settings?.timezone || 'Europe/Lisbon',
+              viewUrl: window.location.origin + '/reservations/' + (addedRes?.bookingNumber || addedRes?.id),
+              cancelUrl: window.location.origin + '/reservations/' + (addedRes?.bookingNumber || addedRes?.id) + '/cancel'
+            }),
+          });
+          
+          const emailData = await resEmail.json();
+          if (emailData.success) {
+            await updateReservation(addedRes.id, {
+              confirmationEmail: {
+                sent: true,
+                sentAt: new Date().toISOString(),
+                messageId: emailData.messageId
+              }
+            } as any);
+          } else {
+            console.warn('[Admin Create Confirmation Email Failed]:', emailData.error);
+            await updateReservation(addedRes.id, {
+              confirmationEmail: {
+                sent: false,
+                failed: true,
+                error: emailData.error
+              }
+            } as any);
+          }
+        } catch (emailErr: any) {
+          console.warn('[Admin Create Confirmation Email Exception]:', emailErr);
+          await updateReservation(addedRes.id, {
+            confirmationEmail: {
+              sent: false,
+              failed: true,
+              error: emailErr.message
+            }
+          } as any);
+        }
+      }
+
       toast.success(t('res.book_success') || "Reservation added successfully");
       setShowNewResModal(false);
       setNewResData({

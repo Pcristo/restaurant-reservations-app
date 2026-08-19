@@ -3,6 +3,7 @@ import { initializeFirestore, collection, getDocs, getDoc, updateDoc, doc, query
 import fs from 'fs';
 import path from 'path';
 import { sendReservationReminder } from './email';
+import { APP_CONFIG } from '../constants';
 
 let db: any = null;
 
@@ -90,11 +91,11 @@ export const startCronJobs = () => {
                 time: data.time,
                 guests: data.guests,
                 restaurantName: settingsData?.name || settingsData?.restaurantName || 'Nortada',
-                resendApiKey: settingsData?.resendApiKey,
-                resendFromEmail: settingsData?.resendFromEmail,
-                restaurantEmail: settingsData?.email,
-                restaurantPhone: settingsData?.phone,
-                restaurantAddress: settingsData?.address,
+                resendApiKey: settingsData?.resendApiKey || process.env.RESEND_API_KEY || process.env.VITE_RESEND_API_KEY || '',
+                resendFromEmail: settingsData?.resendFromEmail || process.env.RESEND_FROM_EMAIL || process.env.VITE_RESEND_FROM_EMAIL || '',
+                restaurantEmail: settingsData?.email || APP_CONFIG.email,
+                restaurantPhone: settingsData?.phone || APP_CONFIG.phone,
+                restaurantAddress: settingsData?.address || APP_CONFIG.address,
                 timezone: timezone,
                 logoUrl: settingsData?.logoUrl || (settingsData?.useCloudinary ? settingsData?.cloudinaryLogoUrl : '') || '',
                 bookingNumber: data.bookingNumber || data.id,
