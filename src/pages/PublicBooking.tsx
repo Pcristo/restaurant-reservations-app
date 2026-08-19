@@ -898,6 +898,16 @@ export default function PublicBooking() {
                messageId: emailData.messageId
              }
            } as any);
+        } else {
+           console.warn('[Booking Confirmation Email Failed]:', emailData.error);
+           await updateReservation(addedRes.id, {
+             confirmationEmail: {
+               sent: false,
+               failed: true,
+               error: emailData.error || 'Failed to send confirmation email',
+               lastAttemptAt: new Date().toISOString()
+             }
+           } as any);
         }
 
       } catch (err) {

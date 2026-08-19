@@ -118,7 +118,7 @@ export const startCronJobs = () => {
                 });
               } else {
                 const attempts = ((data.reminderEmail as any)?.attempts || 0) + 1;
-                const isPermanent = result.isAuthError || attempts >= 3;
+                const isPermanent = (result.status === 401 || result.status === 403) || attempts >= 3;
                 
                 console.warn(`[Cron] Could not send reminder to ${docSnap.id} (attempt ${attempts}): ${result.error}`);
                 

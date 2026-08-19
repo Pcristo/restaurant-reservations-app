@@ -1142,6 +1142,16 @@ export default function AdminReservations() {
                 messageId: emailData.messageId
               }
             } as any);
+          } else {
+            console.warn('[Admin Create Confirmation Email Failed]:', emailData.error);
+            await updateReservation(addedRes.id, {
+              confirmationEmail: {
+                sent: false,
+                failed: true,
+                error: emailData.error || 'Failed to send confirmation email',
+                lastAttemptAt: new Date().toISOString()
+              }
+            } as any);
           }
         } catch (err) {
           console.error('Error sending confirmation email:', err);

@@ -21,6 +21,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import RestaurantSEOSettings from '../components/admin/RestaurantSEOSettings';
+import { APP_CONFIG } from '../data/appConfig';
 
 dayjs.extend(customParseFormat);
 
@@ -2991,6 +2992,40 @@ export default function AdminSettings() {
                 </p>
               </div>
 
+              {/* Resend Domain Verification & Sandbox Info Banner */}
+              <div className={cn(
+                "p-3 rounded-lg border text-xs leading-relaxed transition-colors",
+                settings?.theme === 'dark' 
+                  ? "bg-amber-950/30 border-amber-800/60 text-amber-200" 
+                  : "bg-amber-50 border-amber-200 text-amber-900"
+              )}>
+                <div className="font-semibold flex items-center gap-1.5 mb-1 text-amber-800 dark:text-amber-300">
+                  <span>ℹ️</span>
+                  <span>{language === 'pt' ? 'Informação Importante sobre Envio do Resend:' : 'Important Resend Delivery Notice:'}</span>
+                </div>
+                <p className="mb-1.5 opacity-90">
+                  {language === 'pt'
+                    ? 'No modo inicial do Resend (onboarding@resend.dev), os emails apenas são entregues ao endereço do proprietário da conta (pedro.web.test@gmail.com).'
+                    : 'In Resend initial mode (onboarding@resend.dev), emails are only delivered to the account owner address (pedro.web.test@gmail.com).'}
+                </p>
+                <p className="opacity-90">
+                  {language === 'pt'
+                    ? 'Para enviar confirmações a todos os clientes, valide o seu domínio em '
+                    : 'To send confirmations to all guests, verify your domain at '}
+                  <a 
+                    href="https://resend.com/domains" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="underline font-bold hover:text-amber-600 dark:hover:text-amber-100"
+                  >
+                    resend.com/domains
+                  </a>
+                  {language === 'pt'
+                    ? ' e configure o email de envio acima (ex: reservas@nortada.pt).'
+                    : ' and set your sender email above (e.g. reservas@nortada.pt).'}
+                </p>
+              </div>
+
               {/* Test Email Section */}
               <div className={cn(
                 "p-3 rounded-lg border flex flex-col gap-2 mt-2",
@@ -3029,7 +3064,8 @@ export default function AdminSettings() {
                             email: target,
                             resendApiKey: formData.resendApiKey,
                             resendFromEmail: formData.resendFromEmail,
-                            restaurantName: formData.name || settings?.name,
+                            restaurantName: formData.name || settings?.name || APP_CONFIG.appName,
+                            logoUrl: formData.logoUrl || (formData.useCloudinary ? formData.cloudinaryLogoUrl : '') || settings?.logoUrl || (settings?.useCloudinary ? settings?.cloudinaryLogoUrl : '') || '',
                             language,
                           })
                         });

@@ -1,17 +1,69 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { Resend } from "resend";
 import dotenv from "dotenv";
-import { sendReservationConfirmation, sendReservationReminder, sendReservationCancellation, sendReservationUpdate, sendTestEmail } from "./src/server/email";
-import { startCronJobs } from "./src/server/cron";
-import { initializeApp as initAdminApp, getApps as getAdminApps } from 'firebase-admin/app';
-import { getAuth as getAdminAuth } from 'firebase-admin/auth';
-import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
-
-
+import { onRequestGet as healthHandler } from "./functions/api/health";
+import { onRequestPost as sendSmsHandler } from "./functions/api/send-sms";
+import { onRequestPost as confirmEmailHandler } from "./functions/api/email/confirmation";
+import { onRequestPost as reminderEmailHandler } from "./functions/api/email/reminder";
+import { onRequestPost as cancelEmailHandler } from "./functions/api/email/cancellation";
+import { onRequestPost as updateEmailHandler } from "./functions/api/email/update";
+import { onRequestPost as testEmailHandler } from "./functions/api/email/test";
+import { onRequestPost as deleteUserByEmailHandler } from "./functions/api/admin/delete-user-by-email";
+import { onRequestPost as deleteUserHandler } from "./functions/api/admin/delete-user";
+import { onRequestPost as updatePasswordHandler } from "./functions/api/admin/update-password";
+import { onRequest as cronRemindersHandler } from "./functions/api/cron/reminders";
 
 dotenv.config();
+
+// Adapter to execute Cloudflare Pages Function handlers inside Express for local development
+function adaptFunction(handler: (context: any) => Promise<Response>) {
+  return async (req: express.Request, res: express.Response) => {
+    try {
+      const url = `${req.protocol}://${req.get('host') || 'localhost:3000'}${req.originalUrl}`;
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(req.headers)) {
+        if (v) {
+          if (Array.isArray(v)) {
+            v.forEach(val => headers.append(k, val));
+          } else {
+            headers.set(k, v);
+          }
+        }
+      }
+
+      const init: RequestInit = {
+        method: req.method,
+        headers,
+      };
+
+      if (req.method !== 'GET' && req.method !== 'HEAD' && req.body) {
+        init.body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      }
+
+      const webRequest = new Request(url, init);
+      const context = {
+        request: webRequest,
+        env: process.env,
+        params: req.params,
+        data: {}
+      };
+
+      const webResponse = await handler(context);
+      
+      res.status(webResponse.status);
+      webResponse.headers.forEach((value, key) => {
+        res.setHeader(key, value);
+      });
+
+      const responseBody = await webResponse.text();
+      res.send(responseBody);
+    } catch (err: any) {
+      console.error('[Local Dev Functions Adapter Error]:', err);
+      res.status(500).json({ success: false, error: err?.message || 'Internal server error executing function' });
+    }
+  };
+}
 
 async function startServer() {
   const app = express();
@@ -20,245 +72,30 @@ async function startServer() {
   // Middleware to parse JSON bodies
   app.use(express.json());
 
-  // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
-  });
+  // Cloudflare Pages Function Routes
+  app.get('/api/health', adaptFunction(healthHandler));
+  app.post('/api/send-sms', adaptFunction(sendSmsHandler));
+  app.post('/api/email/confirmation', adaptFunction(confirmEmailHandler));
+  app.post('/api/email/reminder', adaptFunction(reminderEmailHandler));
+  app.post('/api/email/cancellation', adaptFunction(cancelEmailHandler));
+  app.post('/api/email/update', adaptFunction(updateEmailHandler));
+  app.post('/api/email/test', adaptFunction(testEmailHandler));
+  app.post('/api/admin/delete-user-by-email', adaptFunction(deleteUserByEmailHandler));
+  app.post('/api/admin/delete-user', adaptFunction(deleteUserHandler));
+  app.post('/api/admin/update-password', adaptFunction(updatePasswordHandler));
+  app.all('/api/cron/reminders', adaptFunction(cronRemindersHandler));
 
-  // API route for sending Twilio SMS
-  app.post('/api/send-sms', async (req, res) => {
+  // Local Cron Trigger simulation (runs reminder cron every 60s)
+  setInterval(async () => {
     try {
-      const { phoneNumber, code, restaurantName, twilioAccountSid, twilioAuthToken, twilioPhoneNumber } = req.body;
-      
-      const accountSid = twilioAccountSid || process.env.TWILIO_ACCOUNT_SID;
-      const authToken = twilioAuthToken || process.env.TWILIO_AUTH_TOKEN;
-      const twilioPhone = twilioPhoneNumber || process.env.TWILIO_PHONE_NUMBER;
-      
-      if (!accountSid || !authToken || !twilioPhone) {
-        return res.json({
-          success: true,
-          simulated: true,
-          message: 'Twilio credentials not configured'
-        });
-      }
-
-      const restName = restaurantName || 'DineMaster';
-      const bodyText = `[${restName}] O seu codigo de verificacao e: ${code}. Valido por 10 minutos. / Your verification code is: ${code}. Valid for 10 minutes.`;
-      
-      const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-      const formData = new URLSearchParams();
-      formData.append('To', phoneNumber);
-      formData.append('From', twilioPhone);
-      formData.append('Body', bodyText);
-      
-      const twilioRes = await fetch(twilioUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: formData.toString()
-      });
-      
-      const data = await twilioRes.json();
-      if (!twilioRes.ok) {
-        return res.status(twilioRes.status).json({ success: false, error: data });
-      }
-      
-      return res.json({ success: true, simulated: false, sid: data.sid });
-    } catch (err: any) {
-      console.error('Error sending SMS:', err);
-      return res.status(500).json({ success: false, error: err.message });
+      const mockReq = new Request('http://localhost:3000/api/cron/reminders', { method: 'POST' });
+      await cronRemindersHandler({ request: mockReq, env: process.env });
+    } catch (e) {
+      // ignore cron errors in background
     }
-  });
+  }, 60000);
 
-  // Helper to ensure Resend API key and From Email are loaded from environment or Firestore
-  const enrichEmailBody = async (body: any = {}) => {
-    const data = { ...body };
-    if (!data.resendApiKey && !process.env.RESEND_API_KEY) {
-      try {
-        const adminApp = getAdminApps().length === 0 
-          ? initAdminApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'ai-studio-applet-webapp-d8b8b' })
-          : getAdminApps()[0];
-        const db = getAdminFirestore(adminApp);
-        const settingsSnap = await db.collection('settings').doc('main').get();
-        if (settingsSnap.exists) {
-          const s = settingsSnap.data();
-          if (s?.resendApiKey) data.resendApiKey = s.resendApiKey;
-          if (s?.resendFromEmail && !data.resendFromEmail) data.resendFromEmail = s.resendFromEmail;
-          if (s?.name && !data.restaurantName) data.restaurantName = s.name;
-        }
-      } catch (err) {
-        console.warn('[Email Server] Could not fetch fallback settings from Firestore:', err);
-      }
-    }
-    return data;
-  };
-
-  // API route for sending Resend Confirmation
-  app.post('/api/email/confirmation', async (req, res) => {
-    try {
-      const body = await enrichEmailBody(req.body);
-      const result = await sendReservationConfirmation(body);
-      res.json(result);
-    } catch(e: any) {
-      res.status(500).json({ success: false, error: e.message });
-    }
-  });
-
-  app.post('/api/email/reminder', async (req, res) => {
-    try {
-      const body = await enrichEmailBody(req.body);
-      const result = await sendReservationReminder(body);
-      res.json(result);
-    } catch(e: any) {
-      res.status(500).json({ success: false, error: e.message });
-    }
-  });
-
-  app.post('/api/email/cancellation', async (req, res) => {
-    try {
-      const body = await enrichEmailBody(req.body);
-      const result = await sendReservationCancellation(body);
-      res.json(result);
-    } catch(e: any) {
-      res.status(500).json({ success: false, error: e.message });
-    }
-  });
-
-  app.post('/api/email/update', async (req, res) => {
-    try {
-      const body = await enrichEmailBody(req.body);
-      const result = await sendReservationUpdate(body);
-      res.json(result);
-    } catch(e: any) {
-      res.status(500).json({ success: false, error: e.message });
-    }
-  });
-
-  app.post('/api/email/test', async (req, res) => {
-    try {
-      const body = await enrichEmailBody(req.body);
-      const result = await sendTestEmail(body);
-      res.json(result);
-    } catch(e: any) {
-      res.status(500).json({ success: false, error: e.message });
-    }
-  });
-
-  // API route to change any user's password locally without sending reset email
-  
-  
-  app.post('/api/admin/delete-user-by-email', async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ success: false, error: 'Missing email' });
-      }
-
-      const adminApp = getAdminApps().length === 0 
-        ? initAdminApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'ai-studio-applet-webapp-d8b8b' })
-        : getAdminApps()[0];
-
-      const auth = getAdminAuth(adminApp);
-      const db = getAdminFirestore(adminApp);
-
-      try {
-        const user = await auth.getUserByEmail(email);
-        if (user) {
-          // Verify it's an orphan! It should NOT exist in `users` collection as an active role
-          const usersSnap = await db.collection('users').where('email', '==', email).get();
-          if (!usersSnap.empty) {
-             return res.status(403).json({ success: false, error: 'User is not an orphan, cannot delete.' });
-          }
-          
-          // Verify it's not a registered customer
-          const custSnap = await db.collection('customers').where('email', '==', email).where('isRegistered', '==', true).get();
-          if (!custSnap.empty) {
-             return res.status(403).json({ success: false, error: 'Customer is registered, cannot delete.' });
-          }
-          
-          await auth.deleteUser(user.uid);
-        }
-      } catch (e: any) {
-        if (e.code !== 'auth/user-not-found') {
-          throw e;
-        }
-      }
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error('Error deleting user by email via admin SDK:', err);
-      return res.status(500).json({ success: false, error: err.message || 'Failed to delete user' });
-    }
-  });
-
-  app.post('/api/admin/delete-user', async (req, res) => {
-    try {
-      const { uid, email } = req.body;
-      if (!uid && !email) {
-        return res.status(400).json({ success: false, error: 'Missing uid or email' });
-      }
-
-      const adminApp = getAdminApps().length === 0 
-        ? initAdminApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'ai-studio-applet-webapp-d8b8b' })
-        : getAdminApps()[0];
-
-      const auth = getAdminAuth(adminApp);
-      let targetUid = uid;
-
-      // If no valid UID was provided, try to look up the user by email
-      if ((!targetUid || targetUid.length < 10) && email) {
-        try {
-          const userRecord = await auth.getUserByEmail(email);
-          targetUid = userRecord.uid;
-        } catch (e: any) {
-          if (e.code === 'auth/user-not-found') {
-            return res.json({ success: true, message: 'User not found in Auth by email, skipping' });
-          }
-          throw e;
-        }
-      }
-
-      if (targetUid && targetUid.length >= 10) {
-        await auth.deleteUser(targetUid);
-      }
-      
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error('Error deleting user via admin SDK:', err);
-      if (err.code === 'auth/user-not-found') {
-        return res.json({ success: true });
-      }
-      return res.status(500).json({ success: false, error: err.message || 'Failed to delete user' });
-    }
-  });
-
-  app.post('/api/admin/update-password', async (req, res) => {
-    try {
-      const { uid, newPassword } = req.body;
-      if (!uid || !newPassword) {
-        return res.status(400).json({ success: false, error: 'Missing uid or newPassword' });
-      }
-      if (newPassword.length < 6) {
-        return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
-      }
-
-      const adminApp = getAdminApps().length === 0 
-        ? initAdminApp({ projectId: process.env.FIREBASE_PROJECT_ID || 'ai-studio-applet-webapp-d8b8b' })
-        : getAdminApps()[0];
-
-      await getAdminAuth(adminApp).updateUser(uid, { password: newPassword });
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error('Error updating user password via admin SDK:', err);
-      return res.status(500).json({ success: false, error: err.message || 'Failed to update user password' });
-    }
-  });
-  
-  // Start cron jobs
-  startCronJobs();
-
-// Vite middleware for development
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -269,7 +106,7 @@ async function startServer() {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
-        // Ensure Service Worker and Web Manifest are not aggressively cached by intermediate proxies
+        // Ensure Service Worker and Web Manifest are not aggressively cached
         if (filePath.endsWith('sw.js') || filePath.endsWith('registerSW.js') || filePath.endsWith('manifest.webmanifest')) {
           res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         }
